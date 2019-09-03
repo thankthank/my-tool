@@ -1,3 +1,5 @@
+#!/bin/bash
+
 Files=$1
 Target_dir=$2
 HOSTS="71 72 73 74"

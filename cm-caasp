@@ -1,3 +1,5 @@
+#!/bin/bash
+#
 CMD=$*
 #HOSTS="ses2 ses3 ses4"
 HOSTS="71 72 73 74"
