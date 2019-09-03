@@ -1,5 +1,24 @@
 #!/bin/bash
 
+func_Check() {
+## Chech if files in current directory is up-to-date
+git push origin master 2> ./tmp_RETURN
+
+if [[ $(cat ./tmp_RETURN) == "Everything up-to-date" ]] ;
+then
+	echo "Confirmed"
+	rm -f ./tmp_RETURN
+else
+	echo "make directory up-to-date"
+	rm -f ./tmp_RETURN
+	exit 1;
+fi
+
+}
+
+
+func_Main() {
+
 ##Version setting
 osc checkout home:cchon my-tool
 VER_MAJOR=$(ls home:cchon/my-tool | grep tar.gz | awk -F\- '{print $3}' | awk -F. '{print $1}')
@@ -41,3 +60,8 @@ osc vc
 osc add *.tar.gz
 
 osc commit
+
+}
+
+func_Check;
+func_Main;
