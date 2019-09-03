@@ -1,6 +1,7 @@
 #!/bin/bash
 
 #Run commands in several hosts
+#automatic packaging test 
 
 CMD=$*
 #HOSTS="ses2 ses3 ses4"
