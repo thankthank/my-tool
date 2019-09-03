@@ -1,0 +1,18 @@
+Files=$1
+Target_dir=$2
+HOSTS="71 72 73 74"
+
+
+for i in $HOSTS;
+do
+
+        echo "##########################";
+        echo Running 192.168.37.$i;
+        scp -r $Files 192.168.37.$i:$Target_dir;
+        echo Done;
+        echo;
+	echo;
+
+done;
+
+echo "CMD_Finished"

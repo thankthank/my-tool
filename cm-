@@ -1,0 +1,18 @@
+CMD=$*
+#HOSTS="ses2 ses3 ses4"
+HOSTS="71 72 73 74 81"
+
+
+for i in $HOSTS;
+do
+
+        echo "##########################";
+        echo Running 192.168.37.$i;
+        ssh  192.168.37.$i $CMD;
+        echo Done;
+        echo;
+	echo;
+
+done;
+
+echo "CMD_Finished"

@@ -1,0 +1,17 @@
+CMD=$*
+HOSTS="ses1 ses2 ses3 ses4"
+
+
+for i in $HOSTS;
+do
+
+        echo "##########################";
+        echo Running $i;
+        ssh $i  $CMD;
+        echo Done;
+        echo;
+	echo;
+
+done;
+
+echo "CMD_Finished"
