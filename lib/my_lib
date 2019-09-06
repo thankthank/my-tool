@@ -1,0 +1,34 @@
+#!/bin/bash
+
+Run_script_remote() {
+##########
+# $@ : remote host
+# usage 
+#	# Run_script_remote 192.168.0.11 192.168.0.12
+
+RANDOM_FILE=lab_$RANDOM
+
+cat << EOT > $RANDOM_FILE
+##########
+##########
+#Put your script here
+
+echo "remote run test" > /root/test1
+
+#The end of Script
+##########
+EOT
+chmod 755 $RANDOM_FILE
+
+
+for host in "$@"
+do
+        scp $RANDOM_FILE ${host}:~/
+        ssh $host ./$RANDOM_FILE
+        ssh $host rm -f ./$RANDOM_FILE
+done
+
+rm -f $RANDOM_FILE
+
+}
+
