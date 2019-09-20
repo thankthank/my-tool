@@ -5,7 +5,7 @@
 #automatic packaging test2
 
 CMD="$@"
-HOSTS=$(cat ~/hostlist)
+HOSTS=$(cat ~/hostlist| grep -v ^#)
 
 
 for i in $HOSTS;

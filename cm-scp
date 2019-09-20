@@ -2,7 +2,7 @@
 
 Files=$1
 Target_dir=$2
-HOSTS=$(cat ~/hostlist)
+HOSTS=$(cat ~/hostlist | grep -v ^#)
 
 
 for i in $HOSTS;

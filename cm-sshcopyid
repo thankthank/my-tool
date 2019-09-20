@@ -4,7 +4,7 @@
 #automatic packaging test
 #automatic packaging test2
 
-HOSTS=$(cat ~/hostlist)
+HOSTS=$(cat ~/hostlist| grep -v ^#)
 
 
 for i in $HOSTS;

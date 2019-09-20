@@ -2,7 +2,7 @@
 
 Files="temp.sh"
 Target_dir='/root'
-HOSTS=$(cat ~/hostlist)
+HOSTS=$(cat ~/hostlist| grep -v ^#)
 
 #Generates the file
 cat << EOT > ~/$Files
