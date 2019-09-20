@@ -1,0 +1,22 @@
+#!/bin/bash
+
+#Run commands in several hosts
+#automatic packaging test
+#automatic packaging test2
+
+HOSTS=$(cat ~/hostlist)
+
+
+for i in $HOSTS;
+do
+
+        echo "##########################";
+        echo Running $i;
+        ssh-copy-id  $i;
+        echo Done;
+        echo;
+	echo;
+
+done;
+
+echo "CMD_Finished"
