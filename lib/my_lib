@@ -6,6 +6,7 @@ Run_script_remote() {
 # usage 
 #	# Run_script_remote 192.168.0.11 192.168.0.12
 
+RANDOM_FILE=''
 RANDOM_FILE=lab_$RANDOM
 
 cat << EOT > $RANDOM_FILE
@@ -13,7 +14,7 @@ cat << EOT > $RANDOM_FILE
 ##########
 #Put your script here
 
-echo "remote run test" > /root/test1
+echo "remote run test2" > /root/test1
 
 #The end of Script
 ##########
