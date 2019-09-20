@@ -4,17 +4,16 @@
 #automatic packaging test
 #automatic packaging test2
 
-CMD=$*
-#HOSTS="ses2 ses3 ses4"
-HOSTS="71 72 73 74 81"
+CMD="$@"
+HOSTS=$(cat ~/hostlist)
 
 
 for i in $HOSTS;
 do
 
         echo "##########################";
-        echo Running 192.168.37.$i;
-        ssh  192.168.37.$i $CMD;
+        echo Running $i;
+        ssh  $i $CMD;
         echo Done;
         echo;
 	echo;

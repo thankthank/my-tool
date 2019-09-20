@@ -2,11 +2,10 @@
 
 Files="temp.sh"
 Target_dir='/root'
-#HOSTS="71 72 73 74 81"
-HOSTS="35 36"
+HOSTS=$(cat ~/hostlist)
 
 #Generates the file
-cat << EOT > /root/$Files
+cat << EOT > ~/$Files
 
 cat << EOL >> tt
 echo "Hello"
@@ -21,9 +20,9 @@ for i in $HOSTS;
 do
 
         echo "##########################";
-        echo Running 192.168.37.$i;
-        scp  /root/$Files 192.168.37.$i:$Target_dir;
-	ssh 192.168.37.$i bash ${Target_dir}/${Files}
+        echo $i;
+        scp  ~/$Files $i:$Target_dir;
+	ssh $i bash ${Target_dir}/${Files}
         echo Done;
         echo;
 	echo;
