@@ -13,6 +13,32 @@ eval "$(ssh-agent)"
 ssh-add /home/sles/.ssh/id_rsa
 
 
+* kubectl
+** Monitor
+kubectl -n kube-system get all
+** Pod monitor
+kubectl -n kube-system get pods -o wide
+kubectl get pods --all-namespaces
+** Node monitor
+kubectl get nodes -o wide
+** Service account monitor
+kubectl get sa
+** Service deletion
+kubectl -n kube-system delete service tiller-deploy
+** Deployment administration
+kubectl -n kube-system get all
+kubectl -n kube-system scale deployment.apps/tiller-deploy --replicas=0
+kubectl -n kube-system delete deployment.apps/tiller-deploy
+** Deployment Deletion
+kubectl -n kube-system delete deployment tiller-deploy
+** Cluster Application
+kubectl -n kube-system apply -f <name>.yml
+** Cluster info and dump
+kubectl -n kube-system cluster-info
+kubectl -n kube-system cluster-info dump
 
+* helm
+** get list
+helm list
 
 #### The end of the guide ####'
