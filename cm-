@@ -3,7 +3,7 @@
 #Run commands in several hosts
 #automatic packaging test
 #automatic packaging test2
-
+if [[ "$@" == "" ]]; then echo "no param!!" ;exit 1;fi;
 CMD="$@"
 HOSTS=$(cat ~/hostlist| grep -v ^#)
 

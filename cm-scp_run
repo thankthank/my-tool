@@ -1,15 +1,57 @@
 #!/bin/bash
 
-Files="temp.sh"
+Files="temp_$(date +%y%m%d%H%M%S).sh"
 Target_dir='/root'
 HOSTS=$(cat ~/hostlist| grep -v ^#)
 
-#Generates the file
+##Values below need to be configured depending on the Generated file
+#MANAGEMENT="caasp-lb"
+#PUBLIC_KEY=$(cat /home/sles/.ssh/id_rsa.pub)
+#HOSTS=$MANAGEMENT
+
+##Generated the file
 cat << EOT > ~/$Files
 
-cat << EOL >> tt
-echo "Hello"
-EOL
+##disable ipv6 for all
+#echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/ipv6.conf
+
+##resolv.conf for all
+#sed -i 's/NETCONFIG_DNS_STATIC_SEARCHLIST=""/NETCONFIG_DNS_STATIC_SEARCHLIST="suse.su"/g' /etc/sysconfig/network/config
+#sed -i 's/NETCONFIG_DNS_STATIC_SERVERS=""/NETCONFIG_DNS_STATIC_SERVERS="168.126.63.1"/g' /etc/sysconfig/network/config
+
+##chrony.conf for ntp server on management node
+#sed -i 's/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g' /etc/chrony.conf
+#sed -i 's+allow 192.168.0.0/16+allow 192.168.0.0/16+g' /etc/chrony.conf
+#sed -i 's/#local stratum 10/local stratum 10/g' /etc/chrony.conf
+#systemctl restart chronyd
+
+##chrony.conf for ntp client
+#sed -i 's/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g' /etc/chrony.conf
+#cat /etc/chrony.conf | grep 'server caasp-lb iburst' || echo 'server caasp-lb iburst' >> /etc/chrony.conf
+#systemctl restart chronyd
+
+
+## Install packages for all
+#zypper --non-interactive in -t pattern enhanced_base yast2_basis
+#zypper --non-interactive in sudo 
+
+## add user, sudoer and public key for all
+#useradd -m sles
+cat /etc/sudoers | grep "sles ALL=(ALL) NOPASSWD: ALL" || echo "sles ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+if [[ ! -e /home/sles/.ssh/authorized_keys ]] 
+then
+	mkdir -p /home/sles/.ssh ;chown sles:users /home/sles/.ssh ;chmod 700 /home/sles/.ssh;touch /home/sles/.ssh/authorized_keys; chown sles:users /home/sles/.ssh/authorized_keys; chmod 600 /home/sles/.ssh/authorized_keys
+fi
+#! Use ssh-rsa public key of the user, sles, on management node
+echo $PUBLIC_KEY >> /home/sles/.ssh/authorized_keys
+
+## CPU and Memory account in systemd for all
+#cat /etc/systemd/system.conf | grep ^'DefaultCPUAccounting=yes' || echo 'DefaultCPUAccounting=yes' >> /etc/systemd/system.conf
+#cat /etc/systemd/system.conf | grep ^'DefaultMemoryAccounting=yes' || echo 'DefaultMemoryAccounting=yes' >> /etc/systemd/system.conf 
+
+## Swap off for all
+#swapoff -a;systemctl stop swap.target;systemctl disable swap.target;
+#cat /etc/fstab | grep swap > swap.tt && sed -i "s~\$(cat swap.tt)~#\$(cat swap.tt)~g" /etc/fstab
 
 
 EOT

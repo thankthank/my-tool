@@ -1,0 +1,113 @@
+#!/bin/bash
+
+Files="temp_$(date +%y%m%d%H%M%S).sh"
+Logfile="/var/log/cm-scp_caasp_deployment_$(date +%y%m%d).log"
+if [[ ! -e $Logfile ]];then touch $Logfile;fi;
+Target_dir='/root'
+HOSTS=$(cat ~/hostlist| grep -v ^#)
+
+##Values below need to be configured depending on the Generated file
+MANAGEMENT="caasp-lb"
+#HOSTS=$MANAGEMENT
+PUBLIC_KEY=$(cat /home/sles/.ssh/id_rsa.pub)
+
+##Generated the file
+cat << EOT > ~/$Files
+
+Debug () {
+echo;
+echo \#\#CMD:\$(date +%y%m%d_%H:%M:%S):  "\$@" | tee -a $Logfile
+
+echo \#\#OUTPUT: | tee -a $Logfile
+CMDFILE=/root/cmd_tmp_\$(date +%y%m%d%H%M%S).sh
+echo "\$@" > \$CMDFILE
+bash \$CMDFILE 2>&1 | tee -a $Logfile
+rm -f \$CMDFILE
+
+## For single guote in single quote, you can do it as follows.
+##e.g. Debug $'ls -al \'ttt\'  '
+## When I run echo "$@", the escape of single quote is removed. However, When I just execute "$@", the escape of single quote is excuted together as follows. 
+##I also tried to run after 'echo' the "$@" such as echo "$@" | bash. But it doesn't work in some case. So I just write a file and rune it.
+##e.g. + sed -i ''\''s/NETCONFIG_DNS_STATIC_SEARCHLIST=""/NETCONFIG_DNS_STATIC_SEARCHLIST="suse.su"/g'\''' /etc/sysconfig/network/config
+
+}
+
+##Test
+#Debug ls /bin/ssse/esd
+
+##disable ipv6 for all
+#Debug $'echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/ipv6.conf'
+
+##resolv.conf for all
+#Debug $'sed -i \'s/NETCONFIG_DNS_STATIC_SEARCHLIST=""/NETCONFIG_DNS_STATIC_SEARCHLIST="suse.su"/g\' /etc/sysconfig/network/config'
+#Debug $'sed -i \'s/NETCONFIG_DNS_STATIC_SERVERS=""/NETCONFIG_DNS_STATIC_SERVERS="168.126.63.1"/g\' /etc/sysconfig/network/config'
+
+##chrony.conf for ntp server on management node
+#Debug $'sed -i \'s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g\' /etc/chrony.conf'
+#Debug $'sed -i \'s+allow 192.168.0.0/16+allow 192.168.0.0/16+g\' /etc/chrony.conf'
+#Debug $'sed -i \'s/#local stratum 10/local stratum 10/g\' /etc/chrony.conf'
+#Debug systemctl restart chronyd
+
+##chrony.conf for ntp client
+#Debug $'sed -i \'s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g\' /etc/chrony.conf'
+#Debug $'cat /etc/chrony.conf | grep \'server caasp-lb iburst\' || echo \'server caasp-lb iburst\' >> /etc/chrony.conf'
+#Debug systemctl restart chronyd
+
+
+## Install packages for all
+#Debug zypper --non-interactive in -t pattern enhanced_base yast2_basis
+#Debug zypper --non-interactive in sudo 
+
+## add user, sudoer and public key for all
+#Debug useradd -m sles
+#Debug $'cat /etc/sudoers | grep "sles ALL=(ALL) NOPASSWD: ALL" || echo "sles ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers'
+#if [[ ! -e /home/sles/.ssh/authorized_keys ]] ; then
+#	mkdir -p /home/sles/.ssh ;chown sles:users /home/sles/.ssh ;chmod 700 /home/sles/.ssh;touch /home/sles/.ssh/authorized_keys; chown sles:users /home/sles/.ssh/authorized_keys; chmod 600 /home/sles/.ssh/authorized_keys
+#fi
+#! Use ssh-rsa public key of the user, sles, on management node
+#echo $PUBLIC_KEY >> /home/sles/.ssh/authorized_keys
+
+## CPU and Memory account in systemd for all
+#cat /etc/systemd/system.conf | grep ^'DefaultCPUAccounting=yes' || echo 'DefaultCPUAccounting=yes' >> /etc/systemd/system.conf
+#cat /etc/systemd/system.conf | grep ^'DefaultMemoryAccounting=yes' || echo 'DefaultMemoryAccounting=yes' >> /etc/systemd/system.conf 
+
+## Swap off for all
+#swapoff -a;systemctl stop swap.target;systemctl disable swap.target;
+#cat /etc/fstab | grep swap > swap.tt && sed -i "s~\$(cat swap.tt)~#\$(cat swap.tt)~g" /etc/fstab
+
+## Bootstrap the cluster on Management
+#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+#Debug skuba -v 5 node bootstrap --user sles --sudo --target caasp-worker2.suse.su caasp-worker2
+
+## It should be added one by one. Check the message log of the target node. Wait until the logs calm down.
+## Addtional Master node on Management
+#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+#Debug skuba node join --role master --user sles --sudo --target caasp-master2.suse.su caasp-master2
+
+## It should be added one by one. Check the message log of the target node. Wait until the logs calm down.
+## Addtional worker node for Management
+#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+#skuba -v5  node join --role worker --user sles --sudo --target caasp-master1.suse.su caasp-master1
+
+## Setup Kubectl
+Debug zypper --non-interactive in kubernetes-client;
+Debug ln -s ~/my-cluster/admin.conf ~/.kube/config
+
+EOT
+
+
+for i in $HOSTS;
+do
+
+        echo "##########################";
+        echo $i;
+        scp  ~/$Files $i:$Target_dir;
+	ssh $i bash ${Target_dir}/${Files}
+	ssh $i rm -f ${Target_dir}/${Files}
+        echo Done;
+        echo;
+	echo;
+
+done;
+
+echo "CMD_Finished"

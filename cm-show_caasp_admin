@@ -1,0 +1,18 @@
+#!/bin/bash
+# This is CaaSP 4 Admin Commands
+# If you want to put '(single quote), you need to put it with \(escape)
+# e.g. \'
+
+echo $'#### The guide start from Here ####
+
+* skuba
+** cluster status
+skuba cluster status
+** ssh-agent setting
+eval "$(ssh-agent)"
+ssh-add /home/sles/.ssh/id_rsa
+
+
+
+
+#### The end of the guide ####'
