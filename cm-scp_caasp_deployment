@@ -11,6 +11,7 @@ MANAGEMENT="caasp-lb"
 #HOSTS=$MANAGEMENT
 PUBLIC_KEY=$(cat /home/sles/.ssh/id_rsa.pub)
 LOCAL_REPO_DIR="/root/local_repo"
+CACERT=$(cat $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem)
 
 ##Generated the file
 cat << EOT > /tmp/$Files
@@ -19,11 +20,15 @@ Debug () {
 echo;
 echo \#\#CMD:\$(date +%y%m%d_%H:%M:%S):  "\$@" | tee -a $Logfile
 
+## escaped single quote in parameter will cause error. escape redirection and pipeline??
 echo \#\#OUTPUT: | tee -a $Logfile
-CMDFILE=/root/cmd_tmp_\$(date +%y%m%d%H%M%S).sh
-echo "\$@" > \$CMDFILE
-bash \$CMDFILE 2>&1 | tee -a $Logfile
-rm -f \$CMDFILE
+"\$@" | tee -a $Logfile
+
+## 2019.09.25 : Commented the lines below because, it fork another process to run script and lose environment.
+#echo "\$@" > \$CMDFILE
+#CMDFILE=/root/cmd_tmp_\$(date +%y%m%d%H%M%S).sh
+#bash \$CMDFILE 2>&1 | tee -a $Logfile
+#rm -f \$CMDFILE
 
 ## For single guote in single quote, you can do it as follows.
 ##e.g. Debug $'ls -al \'ttt\'  '
@@ -37,95 +42,116 @@ rm -f \$CMDFILE
 ## Preparation for cm-scp_caasp_deployment
 
 ## Copy and setup Repository. Deploy my-tool on Management
+# in the $LOCAL_REPO_DIR, my-tool and cert need to be located
 
 ## ssh-copy-id for root to client nodes
 
 ## Setup repositories on client nodes
 
 
-######################
-### Basic Configuration for all nodes
+
+Basic_Configuration_on_All () {
+## Check Configuration below and Reboot after all done
 ## hosts for all
-#cat /etc/hosts | grep 192.168.37.71 || echo "192.168.37.71	caasp-lb.suse.su caasp-lb" >> /etc/hosts
-#cat /etc/hosts | grep 192.168.37.23 || echo "192.168.37.23	caasp-master1.suse.su caasp-master1" >> /etc/hosts
-#cat /etc/hosts | grep 192.168.37.24 || echo "192.168.37.24	caasp-worker1.suse.su caasp-worker1" >> /etc/hosts
-#cat /etc/hosts | grep 192.168.37.25 || echo "192.168.37.25	caasp-worker2.suse.su caasp-worker2" >> /etc/hosts
-#cat /etc/hosts | grep 192.168.37.26 || echo "192.168.37.26	caasp-worker3.suse.su caasp-worker3" >> /etc/hosts
+cat /etc/hosts | grep 192.168.37.71 || echo "192.168.37.71	caasp-lb.suse.su caasp-lb" >> /etc/hosts
+cat /etc/hosts | grep 192.168.37.23 || echo "192.168.37.23	caasp-master1.suse.su caasp-master1" >> /etc/hosts
+cat /etc/hosts | grep 192.168.37.24 || echo "192.168.37.24	caasp-worker1.suse.su caasp-worker1" >> /etc/hosts
+cat /etc/hosts | grep 192.168.37.25 || echo "192.168.37.25	caasp-worker2.suse.su caasp-worker2" >> /etc/hosts
+cat /etc/hosts | grep 192.168.37.26 || echo "192.168.37.26	caasp-worker3.suse.su caasp-worker3" >> /etc/hosts
 
 ##disable ipv6 for all
-#Debug $'echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/ipv6.conf'
+Debug $'echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/ipv6.conf'
 
 ##resolv.conf for all
-#Debug $'sed -i \'s/NETCONFIG_DNS_STATIC_SEARCHLIST=""/NETCONFIG_DNS_STATIC_SEARCHLIST="suse.su"/g\' /etc/sysconfig/network/config'
-#Debug $'sed -i \'s/NETCONFIG_DNS_STATIC_SERVERS=""/NETCONFIG_DNS_STATIC_SERVERS="168.126.63.1"/g\' /etc/sysconfig/network/config'
+Debug $'sed -i \'s/NETCONFIG_DNS_STATIC_SEARCHLIST=""/NETCONFIG_DNS_STATIC_SEARCHLIST="suse.su"/g\' /etc/sysconfig/network/config'
+Debug $'sed -i \'s/NETCONFIG_DNS_STATIC_SERVERS=""/NETCONFIG_DNS_STATIC_SERVERS="168.126.63.1"/g\' /etc/sysconfig/network/config'
 
 ## Swap off for all
-#swapoff -a;systemctl stop swap.target;systemctl disable swap.target;
-#systemctl stop dev-sda2.swap; systemctl mask dev-sda2.swap;
-#cat /etc/fstab | grep swap > swap.tt && sed -i "s~\$(cat swap.tt)~#\$(cat swap.tt)~g" /etc/fstab
+systemctl stop dev-sda2.swap; systemctl mask dev-sda2.swap;
+swapoff -a;systemctl stop swap.target;systemctl disable swap.target;
+cat /etc/fstab | grep swap > swap.tt && sed -i "s~\$(cat swap.tt)~#\$(cat swap.tt)~g" /etc/fstab
 
 ## CPU and Memory account in systemd for all
-#cat /etc/systemd/system.conf | grep ^'DefaultCPUAccounting=yes' || echo 'DefaultCPUAccounting=yes' >> /etc/systemd/system.conf
-#cat /etc/systemd/system.conf | grep ^'DefaultMemoryAccounting=yes' || echo 'DefaultMemoryAccounting=yes' >> /etc/systemd/system.conf 
+cat /etc/systemd/system.conf | grep ^'DefaultCPUAccounting=yes' || echo 'DefaultCPUAccounting=yes' >> /etc/systemd/system.conf
+cat /etc/systemd/system.conf | grep ^'DefaultMemoryAccounting=yes' || echo 'DefaultMemoryAccounting=yes' >> /etc/systemd/system.conf 
 
 ## Install packages for all
-#Debug zypper --non-interactive in -t pattern enhanced_base yast2_basis
-#Debug zypper --non-interactive in sudo 
-#! Install the package below depending on situation
+Debug zypper --non-interactive in -t pattern enhanced_base 
+Debug zypper --non-interactive in sudo wget
+## Install the package below depending on situation
 #Debug zypper --non-interactive in -t pattern  yast2_basis
+
+## Copy CA Cert from my Filr on management node manually if there is no cert directory in $LOCAL_REPO_DIR
+#Debug cd $LOCAL_REPO_DIR
+#Debug wget --no-check-certificate https://filr.microfocus.com/ssf/s/readFile/share/162171/8375025754279403544/publicLink/cert.tar.gz;
+#Debug tar xfvz cert.tar.tz
+
+## Insert CA cert
+cat $CACERT >  /etc/pki/trust/anchors/cacert.pem
+# The command below will update /etc/ssl/ca-buldle.pem
+update-ca-certificates;
+
+# Need to reboot or similar job for k8s to recognize Cert
+}
 
 ########################################
 ### Hostname and static network (IP, Subnet MASK, Gateway)
-#Need to be done manually. Reboot required.
+##Need to be done manually. Reboot required.
 # ssh caasp-master1 'echo caasp-master1 > /etc/hostname'
 # ssh caasp-worker1 'echo caasp-worker1 > /etc/hostname'
 # ssh caasp-worker2 'echo caasp-worker2 > /etc/hostname'
 # ssh caasp-worker3 'echo caasp-worker3 > /etc/hostname'
 
 
-########################################
-### NTP
-##chrony.conf for ntp server on management node
-#Debug $'sed -i \'s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g\' /etc/chrony.conf'
-#Debug $'sed -i \'s+allow 192.168.0.0/16+allow 192.168.0.0/16+g\' /etc/chrony.conf'
-#Debug $'sed -i \'s/#local stratum 10/local stratum 10/g\' /etc/chrony.conf'
-#Debug systemctl restart chronyd
+Chrony_for_ntp_server_on_Management () {
+Debug $'sed -i \'s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g\' /etc/chrony.conf'
+Debug $'sed -i \'s+allow 192.168.0.0/16+allow 192.168.0.0/16+g\' /etc/chrony.conf'
+Debug $'sed -i \'s/#local stratum 10/local stratum 10/g\' /etc/chrony.conf'
+Debug systemctl restart chronyd
+}
 
-##chrony.conf for ntp client
-#Debug $'sed -i \'s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g\' /etc/chrony.conf'
-#Debug $'cat /etc/chrony.conf | grep \'server caasp-lb iburst\' || echo \'server caasp-lb iburst\' >> /etc/chrony.conf'
-#Debug systemctl restart chronyd
+Chrony_for_ntp_client () {
+Debug $'sed -i \'s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g\' /etc/chrony.conf'
+Debug $'cat /etc/chrony.conf | grep \'server caasp-lb iburst\' || echo \'server caasp-lb iburst\' >> /etc/chrony.conf'
+Debug systemctl restart chronyd
+}
 
-####################################################
-### Create a user for skuba
-
+Create_a_user_for_skuba_on_all () {
 ## Manually add user, sles, key-gen on management node
 #useradd -m sles
 #su - sles
 #ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa
 
 ## add user, sudoer and public key on all
-#Debug useradd -m sles
-#Debug $'cat /etc/sudoers | grep "sles ALL=(ALL) NOPASSWD: ALL" || echo "sles ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers'
-#if [[ ! -e /home/sles/.ssh/authorized_keys ]] ; then
-#	mkdir -p /home/sles/.ssh ;chown sles:users /home/sles/.ssh ;chmod 700 /home/sles/.ssh;touch /home/sles/.ssh/authorized_keys; chown sles:users /home/sles/.ssh/authorized_keys; chmod 600 /home/sles/.ssh/authorized_keys
-#fi
-#! Use ssh-rsa public key of the user, sles, on management node
-#echo $PUBLIC_KEY >> /home/sles/.ssh/authorized_keys
+Debug useradd -m sles
+Debug $'cat /etc/sudoers | grep "sles ALL=(ALL) NOPASSWD: ALL" || echo "sles ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers'
+if [[ ! -e /home/sles/.ssh/authorized_keys ]] ; then
+	mkdir -p /home/sles/.ssh ;chown sles:users /home/sles/.ssh ;chmod 700 /home/sles/.ssh;touch /home/sles/.ssh/authorized_keys; chown sles:users /home/sles/.ssh/authorized_keys; chmod 600 /home/sles/.ssh/authorized_keys
+fi
+## Use ssh-rsa public key of the user, sles, on management node
+echo $PUBLIC_KEY >> /home/sles/.ssh/authorized_keys
+}
 
-## Initialze the cluster
-#zypper --non-interactive in -t pattern SUSE-CaaSP-Management
-#! skuba cluster init --control-plane <LB IP/FQDN> <cluster name>
-#skuba cluster init --control-plane 192.168.37.72 my-cluster
+Initialize_the_cluster_on_Management() {
+zypper --non-interactive in -t pattern SUSE-CaaSP-Management
+## skuba cluster init --control-plane <LB IP/FQDN> <cluster name>
+skuba cluster init --control-plane 192.168.37.72 my-cluster
+}
 
-## Bootstrap the cluster on Management
-#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-#Debug skuba -v 5 node bootstrap --user sles --sudo --target caasp-master1.suse.su caasp-master1
+Bootstrap_the_cluster_on_Management () {
+cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+Debug skuba -v 5 node bootstrap --user sles --sudo --target caasp-master1.suse.su caasp-master1
+}
 
-## Setup kubectl
-#Debug zypper --non-interactive in kubernetes-client;
-#Debug ln -s ~/my-cluster/admin.conf ~/.kube/config
+Setup_kubectl_on_Management () {
+Debug zypper --non-interactive in kubernetes-client;
+Debug ln -s ~/my-cluster/admin.conf ~/.kube/config
+}
 
+
+Addtional_node_on_Management() {
+
+echo Addtional Node
 ## It should be added one by one. Check the message log of the target node. Wait until the logs calm down.
 ## Addtional Master node on Management
 #cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
@@ -144,32 +170,195 @@ rm -f \$CMDFILE
 #cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
 #skuba -v5  node join --role worker --user sles --sudo --target caasp-worker3.suse.su caasp-worker3
 
-## Helm Deployment on Management
+}
+
+Helm_Deployment_on_Management () {
 # Create service account and Role Binding
+kubectl create serviceaccount –namespace kube-system tiller
+kubectl create clusterrolebinding tiller –clusterrole=cluster-admin –serviceaccount=kube-system:tiller
 #kubectl -n kube-system apply -f $LOCAL_REPO_DIR/my-tool/k8s/tiller-rbac-config.yml
-#Debug helm init --service-account tiller
 
-## Kubernetes UI
-#! Install heapster
-#helm install --name heapster-default --namespace=kube-system stable/heapster --version=0.2.7 --set rbac.create=true
+Debug helm init --service-account tiller
+}
 
-#! Deploy kubernetes dashboard
-#helm install --namespace=kube-system --name=kubernetes-dashboard stable/kubernetes-dashboard --version=0.6.1
+Kubernetes_UI_on_Management () {
+# Install heapster
+helm install --name heapster-default --namespace=kube-system stable/heapster --version=0.2.7 --set rbac.create=true
 
-#! Dashboard token and access
-#Secret=\$(kubectl -n kube-system get secret | grep dashboard-token | awk '{print \$1}')
-#kubectl -n kube-system describe secret \$Secret | grep ^token | awk '{ print \$2 }' > ~/dashboard.token
-#Debug kubectl -n kube-system apply -f $LOCAL_REPO_DIR/my-tool/k8s/kubernetes-dashboard-access.yml
+# Deploy kubernetes dashboard
+helm install --namespace=kube-system --name=kubernetes-dashboard stable/kubernetes-dashboard --version=0.6.1
 
-#! Dashboard proxy
-#zypper --non-interactive in screen; 
-#screen -dm kubectl proxy --address 0.0.0.0 --accept-hosts '.*'
+# Dashboard token and access
+Secret=\$(kubectl -n kube-system get secret | grep dashboard-token | awk '{print \$1}')
+kubectl -n kube-system describe secret \$Secret | grep ^token | awk '{ print \$2 }' > ~/dashboard.token
+Debug kubectl -n kube-system apply -f $LOCAL_REPO_DIR/my-tool/k8s/kubernetes-dashboard-access.yml
+}
 
-#! Dashboard access using Web Browser and dashboard-token
-#http://<management Ip address>:8001/api/v1/namespaces/kube-system/services/https:kubernetes-dashboard:/proxy/#!/login
+Dashboard_proxy_on_Management () {
+zypper --non-interactive in screen; 
+screen -dm kubectl proxy --address 0.0.0.0 --accept-hosts '.*'
+
+# Dashboard access using Web Browser and dashboard-token
+# http://<management Ip address>:8001/api/v1/namespaces/kube-system/services/https:kubernetes-dashboard:/proxy/#!/login
+}
+
+Create_Certificate_on_Management() {
+
+CADIR=demoCA
+rm -rf ~/cmd_cert
+mkdir -p ~/cmd_cert
+cd ~/cmd_cert
+mkdir \$CADIR
+cd \$CADIR
+mkdir certs crl newcerts certificate crlnumber private requests
+chmod 700 private
+
+# Copy CA key and cert
+cp $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem ~/cmd_cert/\$CADIR/cacert.pem
+cp $LOCAL_REPO_DIR/cert/natgw_cert/cakey.pem ~/cmd_cert/\$CADIR/private/cakey.pem
+
+## create configuration file
+##/etc/ssl/openssl.cnf is the default
+cat << EOF > ~/cmd_cert/reg.cnf
+HOME                    = .
+RANDFILE                = \$ENV::HOME/.rnd
+[ ca ]
+default_ca      = CA_default            # The default ca section
+
+[ CA_default ]
+dir             = ./demoCA              # Where everything is kept
+certs           = ./demoCA/certs            # Where the issued certs are kept
+crl_dir         = ./demoCA/crl              # Where the issued crl are kept
+database        = ./demoCA/index.txt        # database index file.
+new_certs_dir   = ./demoCA/newcerts         # default place for new certs.
+certificate     = ./demoCA/cacert.pem       # The CA certificate
+serial          = ./demoCA/serial           # The current serial number
+crlnumber       = ./demoCA/crlnumber        # the current crl number
+crl             = ./demoCA/crl.pem          # The current CRL
+private_key     = ./demoCA/private/cakey.pem# The private key
+RANDFILE        = ./demoCA/private/.rand    # private random number file
+x509_extensions = usr_cert              # The extensions to add to the cert
+name_opt        = ca_default            # Subject Name options
+cert_opt        = ca_default            # Certificate field options
+
+default_days    = 3650                   # how long to certify for
+default_crl_days= 30                    # how long before next CRL
+default_md      = default               # use public key default MD
+preserve        = no                    # keep passed DN ordering
+policy          = policy_anything
+
+[ usr_cert ]
+nsComment                       = "OpenSSL Generated Certificate"
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid,issuer
+
+[ policy_anything ]
+countryName             = optional
+stateOrProvinceName     = optional
+localityName            = optional
+organizationName        = optional
+organizationalUnitName  = optional
+commonName              = supplied
+emailAddress            = optional
+
+[ req ]
+default_bits       = 2048
+default_md         = sha512
+default_keyfile    = key.pem
+prompt             = no
+encrypt_key        = no
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+
+[ req_distinguished_name ]
+countryName            = "KR"                     # C=
+stateOrProvinceName    = "Seoul"                 # ST=
+localityName           = "Seoul"                 # L=
+postalCode             = "11111"                 # L/postalcode=
+streetAddress          = "Samsumg-ro"            # L/street=
+organizationName       = "SUSE"        # O=
+organizationalUnitName = "SE"          # OU=
+commonName             = "*.suse.su"            # CN=
+emailAddress           = "chris.chon@suse.com"  # CN/emailAddress=
+
+[ v3_req ]
+subjectAltName  = DNS:caasp-lb.suse.su,DNS:caasp-mgm.suse.su # multidomain certificate
+
+EOF
+
+# Create private key and public key(request to be signed by CA)
+cd ~/cmd_cert
+openssl req -config reg.cnf -new -keyout \$CADIR/private/server_key.pem -out \$CADIR/requests/server_req.pem -newkey rsa:2048
+
+touch \$CADIR/index.txt
+echo 01 > \$CADIR/serial
+
+# Create server certificate
+openssl ca -config reg.cnf -policy policy_anything -days 3650 -out \$CADIR/certs/server_crt.pem -infiles \$CADIR/requests/server_req.pem
 
 
+}
 
+Copy_CA_Cert_on_All () {
+#This is done in basic setup procedure
+cp $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem /etc/pki/trust/anchors/cacert.pem
+# The command below will update /etc/ssl/ca-buldle.pem
+update-ca-certificates;
+
+# Need to reboot or similar job for k8s to recognize Cert
+}
+
+Local_registry_deployment_on_Management () {
+#Debug docker pull registry.suse.com/sles12/registry:2.6.2
+Debug mkdir -p /etc/docker_registry/certs
+Debug cp -v ~/cmd_cert/demoCA/certs/server_crt.pem /etc/docker_registry/certs/
+Debug cp -v ~/cmd_cert/demoCA/private/server_key.pem /etc/docker_registry/certs/
+cat << EOF > /etc/docker_registry/config.yml
+version: 0.1
+log:
+  fields:
+    service: registry
+storage:
+  cache:
+    blobdescriptor: inmemory
+  filesystem:
+    rootdirectory: /var/lib/registry
+http:
+  addr: :5000
+  headers:
+    X-Content-Type-Options: [nosniff]
+  tls:
+    certificate: /etc/docker/registry/certs/server_crt.pem
+    key: /etc/docker/registry/certs/server_key.pem
+health:
+  storagedriver:
+    enabled: true
+    interval: 10s
+    threshold: 3
+EOF
+Debug mkdir -p /var/lib/docker/registry
+Debug docker container run -d -p 5000:5000 --name suse-registry -v /etc/docker_registry:/etc/docker/registry -v /var/lib/docker/registry:/var/lib/registry registry.suse.com/sles12/registry:2.6.2
+
+#Debug docker container run -d --restart=always -p 5000:443 --name registry -v /var/lib/docker/registry:/var/lib/registry -v /var/lib/docker/certs:/certs -e REGISTRY_HTTP_ADDR=0.0.0.0:443 -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/server_crt.pem -e REGISTRY_HTTP_TLS_key=/crts/server_key.pem registry.suse.com/sles12/registry:2.6.2
+}
+
+
+## Here to run
+#Basic_Configuration_on_All
+#Chrony_for_ntp_server_on_Management
+#Chrony_for_ntp_client
+#Create_a_user_for_skuba_on_all
+#Initialize_the_cluster_on_Management
+#Bootstrap_the_cluster_on_Management
+#Setup_kubectl_on_Management
+#Addtional_node_on_Management
+
+#Helm_Deployment_on_Management
+#Kubernetes_UI_on_Management
+#Dashboard_proxy_on_Management
+
+Create_Certificate_on_Management
+Local_registry_deployment_on_Management
 
 EOT
 

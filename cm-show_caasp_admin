@@ -26,6 +26,7 @@ kubectl get sa
 ** Service deletion
 kubectl -n kube-system delete service tiller-deploy
 ** Deployment administration
+kubectl create deployment nginx --image=nginx
 kubectl -n kube-system get all
 kubectl -n kube-system scale deployment.apps/tiller-deploy --replicas=0
 kubectl -n kube-system delete deployment.apps/tiller-deploy

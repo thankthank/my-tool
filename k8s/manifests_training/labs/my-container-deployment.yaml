@@ -1,0 +1,14 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: my-container-deployment
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: my-container
+    spec:
+      containers:
+      - name: my-container
+        image: registry.opensuse.org/home/cchon/container/containers/my-container:latest
