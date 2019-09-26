@@ -7,7 +7,8 @@ Target_dir='/root'
 HOSTS=$(cat ~/hostlist| grep -v ^#)
 
 ##Values below need to be configured depending on the Generated file
-MANAGEMENT="caasp-lb"
+#Below is also FQDN of registry
+MGMT_FQDN="caasp-lb.suse.su"
 #HOSTS=$MANAGEMENT
 PUBLIC_KEY=$(cat /home/sles/.ssh/id_rsa.pub)
 LOCAL_REPO_DIR="/root/local_repo"
@@ -38,33 +39,25 @@ echo \#\#OUTPUT: | tee -a $Logfile
 
 }
 
-#####################################################
-## Preparation for cm-scp_caasp_deployment
 
-## Copy and setup Repository. Deploy my-tool on Management
-# in the $LOCAL_REPO_DIR, my-tool and cert need to be located
-
-## ssh-copy-id for root to client nodes
-
-## Setup repositories on client nodes
-
-
-
-Basic_Configuration_on_All () {
-## Check Configuration below and Reboot after all done
+EtcHosts_on_All () {
 ## hosts for all
 cat /etc/hosts | grep 192.168.37.71 || echo "192.168.37.71	caasp-lb.suse.su caasp-lb" >> /etc/hosts
 cat /etc/hosts | grep 192.168.37.23 || echo "192.168.37.23	caasp-master1.suse.su caasp-master1" >> /etc/hosts
 cat /etc/hosts | grep 192.168.37.24 || echo "192.168.37.24	caasp-worker1.suse.su caasp-worker1" >> /etc/hosts
 cat /etc/hosts | grep 192.168.37.25 || echo "192.168.37.25	caasp-worker2.suse.su caasp-worker2" >> /etc/hosts
-cat /etc/hosts | grep 192.168.37.26 || echo "192.168.37.26	caasp-worker3.suse.su caasp-worker3" >> /etc/hosts
+cat /etc/hosts | grep 192.168.37.27 || echo "192.168.37.27	caasp-worker4.suse.su caasp-worker4" >> /etc/hosts
+cat /etc/hosts | grep 192.168.37.29 || echo "192.168.37.29	caasp-worker6.suse.su caasp-worker6" >> /etc/hosts
 
+}
+
+Basic_Configuration_on_All () {
 ##disable ipv6 for all
-Debug $'echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/ipv6.conf'
+echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/ipv6.conf
 
 ##resolv.conf for all
-Debug $'sed -i \'s/NETCONFIG_DNS_STATIC_SEARCHLIST=""/NETCONFIG_DNS_STATIC_SEARCHLIST="suse.su"/g\' /etc/sysconfig/network/config'
-Debug $'sed -i \'s/NETCONFIG_DNS_STATIC_SERVERS=""/NETCONFIG_DNS_STATIC_SERVERS="168.126.63.1"/g\' /etc/sysconfig/network/config'
+Debug sed -i 's/NETCONFIG_DNS_STATIC_SEARCHLIST=""/NETCONFIG_DNS_STATIC_SEARCHLIST="suse.su"/g' /etc/sysconfig/network/config
+Debug sed -i 's/NETCONFIG_DNS_STATIC_SERVERS=""/NETCONFIG_DNS_STATIC_SERVERS="168.126.63.1"/g' /etc/sysconfig/network/config
 
 ## Swap off for all
 systemctl stop dev-sda2.swap; systemctl mask dev-sda2.swap;
@@ -78,20 +71,20 @@ cat /etc/systemd/system.conf | grep ^'DefaultMemoryAccounting=yes' || echo 'Defa
 ## Install packages for all
 Debug zypper --non-interactive in -t pattern enhanced_base 
 Debug zypper --non-interactive in sudo wget
+Debug zypper --non-interactive up --no-recommends kernel-default
 ## Install the package below depending on situation
 #Debug zypper --non-interactive in -t pattern  yast2_basis
 
-## Copy CA Cert from my Filr on management node manually if there is no cert directory in $LOCAL_REPO_DIR
-#Debug cd $LOCAL_REPO_DIR
-#Debug wget --no-check-certificate https://filr.microfocus.com/ssf/s/readFile/share/162171/8375025754279403544/publicLink/cert.tar.gz;
-#Debug tar xfvz cert.tar.tz
-
 ## Insert CA cert
-cat $CACERT >  /etc/pki/trust/anchors/cacert.pem
+cat << EOF  >  /etc/pki/trust/anchors/cacert.pem
+$CACERT
+EOF
 # The command below will update /etc/ssl/ca-buldle.pem
-update-ca-certificates;
+Debug update-ca-certificates;
 
-# Need to reboot or similar job for k8s to recognize Cert
+# Need to reboot or similar job for k8s to recognize Certa
+sync;
+sync;
 }
 
 ########################################
@@ -104,27 +97,23 @@ update-ca-certificates;
 
 
 Chrony_for_ntp_server_on_Management () {
-Debug $'sed -i \'s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g\' /etc/chrony.conf'
-Debug $'sed -i \'s+allow 192.168.0.0/16+allow 192.168.0.0/16+g\' /etc/chrony.conf'
-Debug $'sed -i \'s/#local stratum 10/local stratum 10/g\' /etc/chrony.conf'
+Debug sed -i 's/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g' /etc/chrony.conf
+Debug sed -i 's+#allow 192.168.0.0/16+allow 192.168.0.0/16+g' /etc/chrony.conf
+Debug sed -i 's/#local stratum 10/local stratum 10/g' /etc/chrony.conf
 Debug systemctl restart chronyd
 }
 
 Chrony_for_ntp_client () {
-Debug $'sed -i \'s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g\' /etc/chrony.conf'
-Debug $'cat /etc/chrony.conf | grep \'server caasp-lb iburst\' || echo \'server caasp-lb iburst\' >> /etc/chrony.conf'
+Debug sed -i 's/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g' /etc/chrony.conf
+cat /etc/chrony.conf | grep 'server $MGMT_FQDN iburst' || echo 'server $MGMT_FQDN iburst' >> /etc/chrony.conf
 Debug systemctl restart chronyd
 }
 
 Create_a_user_for_skuba_on_all () {
-## Manually add user, sles, key-gen on management node
-#useradd -m sles
-#su - sles
-#ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa
 
 ## add user, sudoer and public key on all
 Debug useradd -m sles
-Debug $'cat /etc/sudoers | grep "sles ALL=(ALL) NOPASSWD: ALL" || echo "sles ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers'
+cat /etc/sudoers | grep "sles ALL=(ALL) NOPASSWD: ALL" || echo "sles ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 if [[ ! -e /home/sles/.ssh/authorized_keys ]] ; then
 	mkdir -p /home/sles/.ssh ;chown sles:users /home/sles/.ssh ;chmod 700 /home/sles/.ssh;touch /home/sles/.ssh/authorized_keys; chown sles:users /home/sles/.ssh/authorized_keys; chmod 600 /home/sles/.ssh/authorized_keys
 fi
@@ -170,6 +159,9 @@ echo Addtional Node
 #cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
 #skuba -v5  node join --role worker --user sles --sudo --target caasp-worker3.suse.su caasp-worker3
 
+## Addtional worker node on Management
+cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+skuba -v5  node join --role worker --user sles --sudo --target caasp-worker6.suse.su caasp-worker6
 }
 
 Helm_Deployment_on_Management () {
@@ -278,11 +270,11 @@ postalCode             = "11111"                 # L/postalcode=
 streetAddress          = "Samsumg-ro"            # L/street=
 organizationName       = "SUSE"        # O=
 organizationalUnitName = "SE"          # OU=
-commonName             = "*.suse.su"            # CN=
+commonName             = "$MGMT_FQDN"            # CN=
 emailAddress           = "chris.chon@suse.com"  # CN/emailAddress=
 
 [ v3_req ]
-subjectAltName  = DNS:caasp-lb.suse.su,DNS:caasp-mgm.suse.su # multidomain certificate
+#subjectAltName  = DNS:caasp-lb.suse.su,DNS:caasp-mgm.suse.su # multidomain certificate
 
 EOF
 
@@ -337,28 +329,107 @@ health:
     threshold: 3
 EOF
 Debug mkdir -p /var/lib/docker/registry
+
+Debug docker load -i $LOCAL_REPO_DIR/docker_images_file/registry.2.6.2.tar
 Debug docker container run -d -p 5000:5000 --name suse-registry -v /etc/docker_registry:/etc/docker/registry -v /var/lib/docker/registry:/var/lib/registry registry.suse.com/sles12/registry:2.6.2
 
 #Debug docker container run -d --restart=always -p 5000:443 --name registry -v /var/lib/docker/registry:/var/lib/registry -v /var/lib/docker/certs:/certs -e REGISTRY_HTTP_ADDR=0.0.0.0:443 -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/server_crt.pem -e REGISTRY_HTTP_TLS_key=/crts/server_key.pem registry.suse.com/sles12/registry:2.6.2
 }
 
+Local_registry_load_images_on_Management ()
+{
+#clean up images which are loaded on this machine.
+docker images | grep -v REPOSITORY| awk '{print "docker image rm -f "\$3   }' | bash
+
+#load and push
+for i in \$(ls $LOCAL_REPO_DIR/docker_images_file/);do
+
+Result=\$(docker load -i $LOCAL_REPO_DIR/docker_images_file/\$i)
+
+ImgnamewithTar=\$(echo \$i | sed 's/\./\:/')
+ImgnamewithTag=\$(echo \$ImgnamewithTar | sed 's/\.tar//g' )
+ImgnameOnly=\${ImgnamewithTag%%:*}
+ImgnameTagOnly=\${ImgnamewithTag##*:}
+#Below is imagename with Registry
+ImgnameLoaded=\$(echo \$Result| awk -F: '{  print \$2 }' | sed 's/ //g' )
+
+echo Info: 1-ImgnamewithTar  :: 2-ImgnamewithTag  :: 3-ImgnameOnly :: 4-ImgnameTagOnly :: 5-ImgnameLoaded
+echo Info: 1-\$ImgnamewithTar  :: 2-\$ImgnamewithTag  :: 3-\$ImgnameOnly :: 4-\$ImgnameTagOnly :: 5-\$ImgnameLoaded
+
+Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost:5000/\$ImgnamewithTag
+Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost:5000/\$ImgnameOnly:latest
+Debug docker push localhost:5000/\$ImgnamewithTag
+Debug docker push localhost:5000/\$ImgnameOnly:latest
+
+Debug docker image rm localhost:5000/\$ImgnamewithTag
+Debug docker image rm localhost:5000/\$ImgnameOnly:latest
+Debug docker image rm \$ImgnameLoaded:\$ImgnameTagOnly
+done
+
+}
+
+Local_registry_remove_on_Management () {
+
+docker container rm -f suse-registry;
+rm -rf /etc/docker_registry
+rm -rf /var/lib/docker/registry
+
+#clean up images which are loaded on this machine.
+docker images | grep -v REPOSITORY| awk '{print "docker image rm -f "\$3   }' | bash
+}
+
+ChangeMy-clusterToLocalRegistry_on_Management () {
+cd ~/my-cluster
+find . -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+registry.suse.com/caasp/v4+$MGMT_FQDN:5000+g\' "\$1"  "  }' | bash
+
+}
 
 ## Here to run
+
+#####################################################
+## Manual Preparation for cm-scp_caasp_deployment
+## Copy and setup Repository. Deploy my-tool on Management
+## in the $LOCAL_REPO_DIR, my-tool, cert, RPM repo and docker_images_file need to be located
+# ssh-copy-id for root to client nodes
+# Setup repositories on client nodes
+
+#EtcHosts_on_All
 #Basic_Configuration_on_All
+
+########################################
+### Hostname and static network (IP, Subnet MASK, Gateway)
+## Need to be done manually. Reboot required.
+# ssh caasp-master1 'echo caasp-master1 > /etc/hostname'
+# ssh caasp-worker1 'echo caasp-worker1 > /etc/hostname'
+# ssh caasp-worker2 'echo caasp-worker2 > /etc/hostname'
+# ssh caasp-worker6 'echo caasp-worker6 > /etc/hostname'
+
 #Chrony_for_ntp_server_on_Management
 #Chrony_for_ntp_client
+
+########################################
+## Manually add user, sles, key-gen on management node
+## useradd -m sles
+## su - sles
+## ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa
+
 #Create_a_user_for_skuba_on_all
 #Initialize_the_cluster_on_Management
+#ChangeMy-clusterToLocalRegistry_on_Management
+
+#Create_Certificate_on_Management
+#Local_registry_remove_on_Management 
+#Local_registry_deployment_on_Management
+#Local_registry_load_images_on_Management 
+
 #Bootstrap_the_cluster_on_Management
 #Setup_kubectl_on_Management
-#Addtional_node_on_Management
+Addtional_node_on_Management
 
 #Helm_Deployment_on_Management
 #Kubernetes_UI_on_Management
 #Dashboard_proxy_on_Management
 
-Create_Certificate_on_Management
-Local_registry_deployment_on_Management
 
 EOT
 
