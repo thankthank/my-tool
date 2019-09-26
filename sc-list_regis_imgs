@@ -1,0 +1,3 @@
+#!/bin/bash
+find /var/lib/docker/registry/docker/ | grep repositories | grep tags | awk -F\/ '{print $10"/"$13 }' | awk '!a[$0]++'
+

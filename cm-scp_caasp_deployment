@@ -18,36 +18,27 @@ CACERT=$(cat $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem)
 cat << EOT > /tmp/$Files
 
 Debug () {
-echo;
-echo \#\#CMD:\$(date +%y%m%d_%H:%M:%S):  "\$@" | tee -a $Logfile
-
-## escaped single quote in parameter will cause error. escape redirection and pipeline??
-echo \#\#OUTPUT: | tee -a $Logfile
+echo COMMAND:\$(date +%y%m%d_%H:%M:%S): "\$@" | tee -a $Logfile
+echo OUTPUT-Started:
 "\$@" | tee -a $Logfile
+echo OUTPUT-Done
+}
 
-## 2019.09.25 : Commented the lines below because, it fork another process to run script and lose environment.
-#echo "\$@" > \$CMDFILE
-#CMDFILE=/root/cmd_tmp_\$(date +%y%m%d%H%M%S).sh
-#bash \$CMDFILE 2>&1 | tee -a $Logfile
-#rm -f \$CMDFILE
+Debug_print () {
+#Only print Command and no OUTPUT. It will be used commands which include terminator such as ;, >, ||
+# Use single quote in Single quote
+# Debug_print $'echo \'ls -al\' | grep tt '
 
-## For single guote in single quote, you can do it as follows.
-##e.g. Debug $'ls -al \'ttt\'  '
-## When I run echo "$@", the escape of single quote is removed. However, When I just execute "$@", the escape of single quote is excuted together as follows. 
-##I also tried to run after 'echo' the "$@" such as echo "$@" | bash. But it doesn't work in some case. So I just write a file and rune it.
-##e.g. + sed -i ''\''s/NETCONFIG_DNS_STATIC_SEARCHLIST=""/NETCONFIG_DNS_STATIC_SEARCHLIST="suse.su"/g'\''' /etc/sysconfig/network/config
-
+echo COMMAND:\$(date +%y%m%d_%H:%M:%S): "\$@" | tee -a $Logfile
 }
 
 
 EtcHosts_on_All () {
 ## hosts for all
 cat /etc/hosts | grep 192.168.37.71 || echo "192.168.37.71	caasp-lb.suse.su caasp-lb" >> /etc/hosts
-cat /etc/hosts | grep 192.168.37.23 || echo "192.168.37.23	caasp-master1.suse.su caasp-master1" >> /etc/hosts
-cat /etc/hosts | grep 192.168.37.24 || echo "192.168.37.24	caasp-worker1.suse.su caasp-worker1" >> /etc/hosts
-cat /etc/hosts | grep 192.168.37.25 || echo "192.168.37.25	caasp-worker2.suse.su caasp-worker2" >> /etc/hosts
-cat /etc/hosts | grep 192.168.37.27 || echo "192.168.37.27	caasp-worker4.suse.su caasp-worker4" >> /etc/hosts
-cat /etc/hosts | grep 192.168.37.29 || echo "192.168.37.29	caasp-worker6.suse.su caasp-worker6" >> /etc/hosts
+cat /etc/hosts | grep 192.168.37.30 || echo "192.168.37.30	caasp-master1.suse.su caasp-master1" >> /etc/hosts
+cat /etc/hosts | grep 192.168.37.31 || echo "192.168.37.31	caasp-worker1.suse.su caasp-worker1" >> /etc/hosts
+cat /etc/hosts | grep 192.168.37.32 || echo "192.168.37.32	caasp-worker2.suse.su caasp-worker2" >> /etc/hosts
 
 }
 
@@ -58,6 +49,10 @@ echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/ipv6.conf
 ##resolv.conf for all
 Debug sed -i 's/NETCONFIG_DNS_STATIC_SEARCHLIST=""/NETCONFIG_DNS_STATIC_SEARCHLIST="suse.su"/g' /etc/sysconfig/network/config
 Debug sed -i 's/NETCONFIG_DNS_STATIC_SERVERS=""/NETCONFIG_DNS_STATIC_SERVERS="168.126.63.1"/g' /etc/sysconfig/network/config
+
+## Default route
+Debug_print $'echo \'default 192.168.37.254 - -\' > /etc/sysconfig/network/routes'
+echo 'default 192.168.37.254 - -' > /etc/sysconfig/network/routes
 
 ## Swap off for all
 systemctl stop dev-sda2.swap; systemctl mask dev-sda2.swap;
@@ -87,15 +82,6 @@ sync;
 sync;
 }
 
-########################################
-### Hostname and static network (IP, Subnet MASK, Gateway)
-##Need to be done manually. Reboot required.
-# ssh caasp-master1 'echo caasp-master1 > /etc/hostname'
-# ssh caasp-worker1 'echo caasp-worker1 > /etc/hostname'
-# ssh caasp-worker2 'echo caasp-worker2 > /etc/hostname'
-# ssh caasp-worker3 'echo caasp-worker3 > /etc/hostname'
-
-
 Chrony_for_ntp_server_on_Management () {
 Debug sed -i 's/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g' /etc/chrony.conf
 Debug sed -i 's+#allow 192.168.0.0/16+allow 192.168.0.0/16+g' /etc/chrony.conf
@@ -109,7 +95,7 @@ cat /etc/chrony.conf | grep 'server $MGMT_FQDN iburst' || echo 'server $MGMT_FQD
 Debug systemctl restart chronyd
 }
 
-Create_a_user_for_skuba_on_all () {
+Create_a_user_for_skuba_on_All () {
 
 ## add user, sudoer and public key on all
 Debug useradd -m sles
@@ -141,27 +127,14 @@ Debug ln -s ~/my-cluster/admin.conf ~/.kube/config
 Addtional_node_on_Management() {
 
 echo Addtional Node
-## It should be added one by one. Check the message log of the target node. Wait until the logs calm down.
 ## Addtional Master node on Management
 #cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
 #Debug skuba -v 5 node join --role master --user sles --sudo --target caasp-master2.suse.su caasp-master2
 
-## It should be added one by one. Check the message log of the target node. Wait until the logs calm down.
-## Addtional worker node on Management
-#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-#skuba -v5  node join --role worker --user sles --sudo --target caasp-worker1.suse.su caasp-worker1
-
-## Addtional worker node on Management
-#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-#skuba -v5  node join --role worker --user sles --sudo --target caasp-worker2.suse.su caasp-worker2
-
-## Addtional worker node on Management
-#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-#skuba -v5  node join --role worker --user sles --sudo --target caasp-worker3.suse.su caasp-worker3
-
 ## Addtional worker node on Management
 cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-skuba -v5  node join --role worker --user sles --sudo --target caasp-worker6.suse.su caasp-worker6
+skuba -v5  node join --role worker --user sles --sudo --target caasp-worker2.suse.su caasp-worker2
+
 }
 
 Helm_Deployment_on_Management () {
@@ -301,7 +274,6 @@ update-ca-certificates;
 }
 
 Local_registry_deployment_on_Management () {
-#Debug docker pull registry.suse.com/sles12/registry:2.6.2
 Debug mkdir -p /etc/docker_registry/certs
 Debug cp -v ~/cmd_cert/demoCA/certs/server_crt.pem /etc/docker_registry/certs/
 Debug cp -v ~/cmd_cert/demoCA/private/server_key.pem /etc/docker_registry/certs/
@@ -331,7 +303,7 @@ EOF
 Debug mkdir -p /var/lib/docker/registry
 
 Debug docker load -i $LOCAL_REPO_DIR/docker_images_file/registry.2.6.2.tar
-Debug docker container run -d -p 5000:5000 --name suse-registry -v /etc/docker_registry:/etc/docker/registry -v /var/lib/docker/registry:/var/lib/registry registry.suse.com/sles12/registry:2.6.2
+Debug docker container run -d -p 443:5000 --name suse-registry -v /etc/docker_registry:/etc/docker/registry -v /var/lib/docker/registry:/var/lib/registry registry.suse.com/sles12/registry:2.6.2
 
 #Debug docker container run -d --restart=always -p 5000:443 --name registry -v /var/lib/docker/registry:/var/lib/registry -v /var/lib/docker/certs:/certs -e REGISTRY_HTTP_ADDR=0.0.0.0:443 -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/server_crt.pem -e REGISTRY_HTTP_TLS_key=/crts/server_key.pem registry.suse.com/sles12/registry:2.6.2
 }
@@ -339,7 +311,7 @@ Debug docker container run -d -p 5000:5000 --name suse-registry -v /etc/docker_r
 Local_registry_load_images_on_Management ()
 {
 #clean up images which are loaded on this machine.
-docker images | grep -v REPOSITORY| awk '{print "docker image rm -f "\$3   }' | bash
+#docker images | grep -v REPOSITORY| awk '{print "docker image rm -f "\$3   }' | bash
 
 #load and push
 for i in \$(ls $LOCAL_REPO_DIR/docker_images_file/);do
@@ -356,13 +328,13 @@ ImgnameLoaded=\$(echo \$Result| awk -F: '{  print \$2 }' | sed 's/ //g' )
 echo Info: 1-ImgnamewithTar  :: 2-ImgnamewithTag  :: 3-ImgnameOnly :: 4-ImgnameTagOnly :: 5-ImgnameLoaded
 echo Info: 1-\$ImgnamewithTar  :: 2-\$ImgnamewithTag  :: 3-\$ImgnameOnly :: 4-\$ImgnameTagOnly :: 5-\$ImgnameLoaded
 
-Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost:5000/\$ImgnamewithTag
-Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost:5000/\$ImgnameOnly:latest
-Debug docker push localhost:5000/\$ImgnamewithTag
-Debug docker push localhost:5000/\$ImgnameOnly:latest
+Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnamewithTag
+Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnameOnly:latest
+Debug docker push localhost/\$ImgnamewithTag
+Debug docker push localhost/\$ImgnameOnly:latest
 
-Debug docker image rm localhost:5000/\$ImgnamewithTag
-Debug docker image rm localhost:5000/\$ImgnameOnly:latest
+Debug docker image rm localhost/\$ImgnamewithTag
+Debug docker image rm localhost/\$ImgnameOnly:latest
 Debug docker image rm \$ImgnameLoaded:\$ImgnameTagOnly
 done
 
@@ -380,7 +352,7 @@ docker images | grep -v REPOSITORY| awk '{print "docker image rm -f "\$3   }' | 
 
 ChangeMy-clusterToLocalRegistry_on_Management () {
 cd ~/my-cluster
-find . -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+registry.suse.com/caasp/v4+$MGMT_FQDN:5000+g\' "\$1"  "  }' | bash
+find . -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+registry.suse.com/caasp/v4+$MGMT_FQDN+g\' "\$1"  "  }' | bash
 
 }
 
@@ -388,32 +360,27 @@ find . -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+regis
 
 #####################################################
 ## Manual Preparation for cm-scp_caasp_deployment
-## Copy and setup Repository. Deploy my-tool on Management
 ## in the $LOCAL_REPO_DIR, my-tool, cert, RPM repo and docker_images_file need to be located
-# ssh-copy-id for root to client nodes
-# Setup repositories on client nodes
+# 1. ssh-copy-id for root to client nodes
+# 2. Local_repo copy and my-tool setup
+# 3. Setup repositories on client nodes
 
 #EtcHosts_on_All
 #Basic_Configuration_on_All
 
 ########################################
-### Hostname and static network (IP, Subnet MASK, Gateway)
-## Need to be done manually. Reboot required.
+### Manual configuration for Hostname and static network (IP, Subnet MASK). Reboot required
 # ssh caasp-master1 'echo caasp-master1 > /etc/hostname'
 # ssh caasp-worker1 'echo caasp-worker1 > /etc/hostname'
-# ssh caasp-worker2 'echo caasp-worker2 > /etc/hostname'
-# ssh caasp-worker6 'echo caasp-worker6 > /etc/hostname'
 
 #Chrony_for_ntp_server_on_Management
 #Chrony_for_ntp_client
 
 ########################################
 ## Manually add user, sles, key-gen on management node
-## useradd -m sles
-## su - sles
-## ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa
+## useradd -m sles; su - sles;ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa
 
-#Create_a_user_for_skuba_on_all
+#Create_a_user_for_skuba_on_All
 #Initialize_the_cluster_on_Management
 #ChangeMy-clusterToLocalRegistry_on_Management
 
@@ -422,9 +389,10 @@ find . -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+regis
 #Local_registry_deployment_on_Management
 #Local_registry_load_images_on_Management 
 
+## From here, tasks need to be done one by one!!!!!!!!!!!!!!!
 #Bootstrap_the_cluster_on_Management
 #Setup_kubectl_on_Management
-Addtional_node_on_Management
+#Addtional_node_on_Management
 
 #Helm_Deployment_on_Management
 #Kubernetes_UI_on_Management

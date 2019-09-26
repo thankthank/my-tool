@@ -158,14 +158,48 @@ echo This is the result of USER : $USER
 
 }
 
-debug () {
+TERM=$(tty)
+Debug () {
 
-echo COMMAND: "$@"
+echo _Debug_CMD:$(date +%y%m%d_%H:%M:%S): "$@"
+echo OUTPUT-Started:
 "$@"
+echo OUTPUT-Done
 
 }
 
+Debug_print () {
+#Only print Command and no OUTPUT. It will be used commands which include terminator such as ;, >, ||
+# Use single quote in Single quote
+# Debug_print $'echo \'ls -al\' | grep tt '
 
+echo _Debug_CMD:$(date +%y%m%d_%H:%M:%S): "$@"
+echo OUTPUT-Started:
+"$@"
+echo OUTPUT-Done
+
+}
+run_Debug_test () {
+
+cd /root/cms/
+
+#Debug ls -al|tee $TERM |grep -v _Debug_CMD > test_file
+#Output is mixed so it is hard to figure it out.
+#Debug ls -al|tee $TERM |grep -v _Debug_CMD | Debug grep registry
+
+
+## 2019.09.25 : Commented the lines below because, it fork another process to run script and lose environment.
+#echo "\$@" > \$CMDFILE
+#CMDFILE=/root/cmd_tmp_\$(date +%y%m%d%H%M%S).sh
+#bash \$CMDFILE 2>&1 | tee -a $Logfile
+#rm -f \$CMDFILE
+
+## For single guote in single quote, you can do it as follows.
+##e.g. Debug $'ls -al \'ttt\'  '
+## When I run echo "$@", the escape of single quote is removed. However, When I just execute "$@", the escape of single quote is excuted together as follows.
+##I also tried to run after 'echo' the "$@" such as echo "$@" | bash. But it doesn't work in some case. So I just write a file and run it.
+##e.g. + sed -i ''\''s/NETCONFIG_DNS_STATIC_SEARCHLIST=""/NETCONFIG_DNS_STATIC_SEARCHLIST="suse.su"/g'\''' /etc/sysconfig/network/config
+}
 
 ex5_sed_cut() {
 
@@ -381,7 +415,7 @@ global_vari_test() {
 
 }
 
-run_awk_vari_test() {
+awk_vari_test() {
 
 VALUE="a b itworks good"
 VALUE_array=(a b itworks good)
