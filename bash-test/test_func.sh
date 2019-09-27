@@ -1,159 +1,15 @@
 #!/bin/bash
 
-value_test() {
-
-name="Hello World"
-
-
-echo ${name}this
-
-}
-
-for_arithmetic_test() {
-#1 ~ 5, 1 ~ 4,1 ~ 3 ...
-
-	for (( i=5 ; i>0 ; i-- ));
-	do
-		#for (( j=1; j<($i+1)*2 ; j++ ));
-		for (( j=1; j<$i+1 ; j++ ));
-		do
-			echo -n ${j}
-		done;
-		echo 
-	done;
-}
-
-bash_etc_test() {
-
-if [ -n "$BASH_ENV" ]; then echo "test env";echo "$BASH_ENV"; fi
-
-echo "new line \
- this is after new line"
-echo
-echo "new line2
-this is after new line2"
-
-echo
-echo "`ls`"
-
-echo "\$  \' \`  \"  \\"
-
-
-}
-
-bash_array_test() {
-
-ARRAY_TEST=(abc b c d e)
-
-echo array test
-echo ${#ARRAY_TEST[0]}
-
-echo "${ARRAY_TEST[@]}"
-
-}
-
-eval_test() {
-
-for i in {1..5}
-do
-	for j in {1..$i}
-	do
-		echo -n $j
-	done
-	
-	echo
-done
-
-
-}
-
-echo_test() {
-
-RED='\e[0;31m'
-NC='\e[0m'
-
-echo -e "${RED}Hello word with e option${NC}"
-echo "${RED}Hello word without e option${NC}"
-
-}
-
-echo_test2() {
-
-
-echo "Hello word in another function"
-
-}
-
-Le1_Ex1() {
-
-cp /var/log/messages /var/log/messages.old
-
-echo 'echo ""  > /var/log/messages'
-
-echo Let\'s check if old file exists 
-
-ls -al /var/log/messages.old
-
-}
-
 source_test() {
 
 if [[ ! -e /root/source_test_dir ]]; 
 then
-	mkdir source_test_dire
+	mkdir source_test_dir
 else 
 	echo Directory exists
 	cd /root/source_test_dir
 	echo "/dk & (this: ) } { * " 
 fi
-
-
-}
-
-Le2_Ex1_parameter() {
-
-echo "\$@ is $@"
-
-if [[ -z $1 ]] ;
-then 
-	echo Please input file to copy
-	read FILE_NAME
-else
-	FILE_NAME="$@"
-fi
-
-for i in $FILE_NAME
-do 
-	echo "copy $i"
-	cp ./$i ~/
-done
-
-}
-
-Le3_ex1_variable_expansion() {
-
-DATE=$(date +%d-%m-%y)
-
-echo date is ${DATE%%-*}
-TMP=${DATE%-*}
-echo month is ${TMP#*-}
-echo year is ${DATE##*-}
-
-}
-
-ex4_awk_tr() {
-
-STRING='cn=laRa,dc=example,dc=com'
-echo $STRING > /root/script/ex4_data
-echo STRING : $STRING
-
-USER=$(awk -F, '/cn/ {print $1} ' /root/script/ex4_data)
-echo This is the result of USER : $USER
-USER=${USER#*=}
-echo This is the result of USER : $USER
-USER=$(echo $USER | tr [:upper:] [:lower:])
-
-echo This is the result of USER : $USER
 
 
 }
@@ -165,23 +21,6 @@ echo _Debug_CMD:$(date +%y%m%d_%H:%M:%S): "$@"
 echo OUTPUT-Started:
 "$@"
 echo OUTPUT-Done
-
-}
-
-Debug_print () {
-#Only print Command and no OUTPUT. It will be used commands which include terminator such as ;, >, ||
-# Use single quote in Single quote
-# Debug_print $'echo \'ls -al\' | grep tt '
-
-echo _Debug_CMD:$(date +%y%m%d_%H:%M:%S): "$@"
-echo OUTPUT-Started:
-"$@"
-echo OUTPUT-Done
-
-}
-run_Debug_test () {
-
-cd /root/cms/
 
 #Debug ls -al|tee $TERM |grep -v _Debug_CMD > test_file
 #Output is mixed so it is hard to figure it out.
@@ -201,7 +40,20 @@ cd /root/cms/
 ##e.g. + sed -i ''\''s/NETCONFIG_DNS_STATIC_SEARCHLIST=""/NETCONFIG_DNS_STATIC_SEARCHLIST="suse.su"/g'\''' /etc/sysconfig/network/config
 }
 
-ex5_sed_cut() {
+Debug_print () {
+#Only print Command and no OUTPUT. It will be used commands which include terminator such as ;, >, ||
+# Use single quote in Single quote
+# Debug_print $'echo \'ls -al\' | grep tt '
+
+echo _Debug_CMD:$(date +%y%m%d_%H:%M:%S): "$@"
+}
+
+Paste_top () {
+cat $2 >> $1; mv $1 $2
+}
+
+
+sed_cut() {
 
 #File creation
 
@@ -244,7 +96,7 @@ done
 }
 
 
-Le6_getopts_arithmetic_if_test1() {
+getopts_arithmetic_if_test1() {
 
 #Get opts and parsing and setting
 # -a : username, -b number, file_name
@@ -294,7 +146,7 @@ done
 }
 
 
-Le6_select_test() {
+select_test() {
 
 select TASK in 'ls' 'find' 'df -h'
 do
@@ -315,14 +167,8 @@ done
 
 }
 
-Le6_trap_logger_test() {
 
-echo "log test"
-
-}
-
-
-Le6_ex6() {
+trap_case_test() {
 
 #Redifine signals using Trap
 trap "echo nono" INT
@@ -406,7 +252,9 @@ done
 
 }
 
-global_vari_test() {
+################################
+#variable
+global_variable_test() {
 
 	echo GLOBAL1 : $GLOBAL1;
 	echo GLOBAL2 : $GLOBAL2;
@@ -415,7 +263,132 @@ global_vari_test() {
 
 }
 
-awk_vari_test() {
+run_variable_array_test() {
+
+ARRAY_TEST=(abc b c d e)
+MASTER=(caasp-master1 caasp-master2 caasp-master3)
+MASTER_IP=(192.168.37.71 192.168.37.72 192.168.37.73)
+
+echo array test
+for i in {0..5};do
+	echo i : $i
+	#echo '${#ARRAY_TEST[$i]}: ' ${#ARRAY_TEST[$i]}
+	#echo '${ARRAY_TEST[$i]}: ' ${ARRAY_TEST[$i]}
+	echo ${MASTER[$i]} : ${MASTER_IP[$i]}
+done
+
+#echo "${ARRAY_TEST[@]}"
+
+}
+
+variable_array_aggregation() {
+#hostname and IP
+MASTER=(caasp-master1 )
+MASTER_IP=(192.168.37.30 )
+WORKER=(caasp-worker1 caasp-worker2 caasp-worker3)
+WORKER_IP=(192.168.37.31 192.168.37.32 192.168.37.33)
+
+# Hostname and IP aggregation
+HOSTNAME_TOTAL=()
+HOSTNAME_TOTAL[0]=caasp-lb
+
+j=${#HOSTNAME_TOTAL[@]};for i in "${MASTER[@]}";do
+	HOSTNAME_TOTAL[$j]=$i;
+((j=j+1));done;
+
+j=${#HOSTNAME_TOTAL[@]};for i in "${WORKER[@]}";do
+	HOSTNAME_TOTAL[$j]=$i;
+((j=j+1));done;
+
+IP_TOTAL=()
+IP_TOTAL[0]=192.168.37.71
+
+j=${#IP_TOTAL[@]};for i in "${MASTER_IP[@]}";do
+	IP_TOTAL[$j]=$i;
+((j=j+1));done;
+
+j=${#IP_TOTAL[@]};for i in "${WORKER_IP[@]}";do
+	IP_TOTAL[$j]=$i;
+((j=j+1));done;
+
+}
+
+variable_parameter() {
+
+echo "\$@ is $@"
+
+if [[ -z $1 ]] ;
+then 
+	echo Please input file to copy
+	read FILE_NAME
+else
+	FILE_NAME="$@"
+fi
+
+for i in $FILE_NAME
+do 
+	echo "copy $i"
+	cp ./$i ~/
+done
+
+}
+
+variable_expansion_parse() {
+
+DATE=$(date +%d-%m-%y)
+
+echo date is ${DATE%%-*}
+TMP=${DATE%-*}
+echo month is ${TMP#*-}
+echo year is ${DATE##*-}
+
+name="Variable in character"
+echo ${name}this
+}
+
+variable_location3() {
+
+ValueInLocation3="Variable in Other function will not be printed"
+}
+
+ValueInLocation4="Variable in Global script will be printed"
+variable_location() {
+
+echo Variable_in_location2 : $ValueInLocation2
+echo Variable in other function : $ValueInLocation3
+echo Variable_in_location4 : $ValueInLocation4
+echo Variable Below Print Function : $ValueBelowFunction
+}
+
+variable_location2() {
+
+echo "Variable after function"
+
+ValueInLocation2="Variable above the print function will be printed"
+variable_location
+ValueBelowFunction="what?"
+
+}
+
+####################################
+#awk
+awk_search_tr() {
+
+STRING='cn=laRa,dc=example,dc=com'
+echo $STRING > /root/script/ex4_data
+echo STRING : $STRING
+
+USER=$(awk -F, '/cn/ {print $1} ' /root/script/ex4_data)
+echo This is the result of USER : $USER
+USER=${USER#*=}
+echo This is the result of USER : $USER
+USER=$(echo $USER | tr [:upper:] [:lower:])
+
+echo This is the result of USER : $USER
+
+}
+
+awk_variable_test() {
 
 VALUE="a b itworks good"
 VALUE_array=(a b itworks good)
@@ -436,3 +409,65 @@ do
 
 done
 }
+
+###################################
+#for
+for_arithmetic_test() {
+#1 ~ 5, 1 ~ 4,1 ~ 3 ...
+
+	for (( i=5 ; i>0 ; i-- ));
+	do
+		#for (( j=1; j<($i+1)*2 ; j++ ));
+		for (( j=1; j<$i+1 ; j++ ));
+		do
+			echo -n ${j}
+		done;
+		echo 
+	done;
+}
+
+for_variable_expension_test() {
+
+for i in {1..5}
+do
+	for j in {1..$i}
+	do
+		echo -n $j
+	done
+	
+	echo
+done
+}
+
+########################################
+#if
+if_echo_test() {
+
+if [ -n "$BASH_ENV" ]; then echo "test env";echo "$BASH_ENV"; fi
+
+echo "new line \
+ this is after new line"
+echo
+echo "new line2
+this is after new line2"
+
+echo
+echo "`ls`"
+
+echo "\$  \' \`  \"  \\"
+
+
+}
+
+##########################################
+#echo
+echo_test() {
+
+RED='\e[0;31m'
+NC='\e[0m'
+
+echo -e "${RED}Hello word with e option${NC}"
+echo "${RED}Hello word without e option${NC}"
+
+}
+

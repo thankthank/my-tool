@@ -1,21 +1,48 @@
 #!/bin/bash
 
+## Values below need to be configured depending on environment
+#Below is also FQDN of registry
+DOMAIN="suse.su"
+MGMT="caasp-lb"
+MGMT_FQDN="$MGMT.$DOMAIN"
+MGMT_IP="192.168.37.71"
+LOCAL_REPO_DIR="/root/local_repo"
+DNS_SERVER="168.126.63.1"
+GATEWAY="192.168.37.254"
+SWAP_DEV="sda2"
+NTP_CLIENT_NET="192.168.0.0/16"
+LB_IP="192.168.37.72"
+# Continue to configure variables in here document!!!!!
+
+## Default Configuration
 Files="temp_$(date +%y%m%d%H%M%S).sh"
 Logfile="/var/log/cm-scp_caasp_deployment_$(date +%y%m%d).log"
 if [[ ! -e $Logfile ]];then touch $Logfile;fi;
 Target_dir='/root'
 HOSTS=$(cat ~/hostlist| grep -v ^#)
-
-##Values below need to be configured depending on the Generated file
-#Below is also FQDN of registry
-MGMT_FQDN="caasp-lb.suse.su"
-#HOSTS=$MANAGEMENT
 PUBLIC_KEY=$(cat /home/sles/.ssh/id_rsa.pub)
-LOCAL_REPO_DIR="/root/local_repo"
 CACERT=$(cat $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem)
+
+
 
 ##Generated the file
 cat << EOT > /tmp/$Files
+## Values below need to be configured depending on environment
+#hostname and IP
+MASTER=(caasp-master1 )
+MASTER_IP=(192.168.37.30 )
+WORKER=(caasp-worker1 caasp-worker2 caasp-worker3)
+WORKER_IP=(192.168.37.31 192.168.37.32 192.168.37.33)
+
+# Hostname and IP aggregation
+HOSTNAME_TOTAL=()
+HOSTNAME_TOTAL[0]=$MGMT
+j=\${#HOSTNAME_TOTAL[@]};for i in "\${MASTER[@]}";do HOSTNAME_TOTAL[\$j]=\$i; ((j=j+1));done;
+j=\${#HOSTNAME_TOTAL[@]};for i in "\${WORKER[@]}";do HOSTNAME_TOTAL[\$j]=\$i; ((j=j+1));done;
+IP_TOTAL=()
+IP_TOTAL[0]=$MGMT_IP
+j=\${#IP_TOTAL[@]};for i in "\${MASTER_IP[@]}";do IP_TOTAL[\$j]=\$i; ((j=j+1));done;
+j=\${#IP_TOTAL[@]};for i in "\${WORKER_IP[@]}";do IP_TOTAL[\$j]=\$i; ((j=j+1));done;
 
 Debug () {
 echo COMMAND:\$(date +%y%m%d_%H:%M:%S): "\$@" | tee -a $Logfile
@@ -32,13 +59,46 @@ Debug_print () {
 echo COMMAND:\$(date +%y%m%d_%H:%M:%S): "\$@" | tee -a $Logfile
 }
 
+Paste_top () {
+cat \$2 >> \$1; mv \$1 \$2
+}
 
 EtcHosts_on_All () {
+
+j=0;for i in "\${HOSTNAME_TOTAL[@]}"; do
+
+#hostnames match but ip address is diffetent
+cat /etc/hosts | awk -v V1="\${IP_TOTAL[\$j]}" -v V2="\${HOSTNAME_TOTAL[\$j]}" \$'{
+split(\$2,a,".")
+if(a[1]==V2 && \$1!=V1) print "sed -i \'s/"\$0"/#"\$0"/g\' /etc/hosts"
+}'|bash 
+#if there is no hostname
+cat /etc/hosts | grep -v ^# |  grep -w \${HOSTNAME_TOTAL[\$j]} ||echo "\${IP_TOTAL[\$j]} \$i.$DOMAIN \$i" >> /etc/hosts
+
+(( j=j+1 ));done
+
+}
+
+EtcHosts_on_All_bak () {
 ## hosts for all
-cat /etc/hosts | grep 192.168.37.71 || echo "192.168.37.71	caasp-lb.suse.su caasp-lb" >> /etc/hosts
-cat /etc/hosts | grep 192.168.37.30 || echo "192.168.37.30	caasp-master1.suse.su caasp-master1" >> /etc/hosts
-cat /etc/hosts | grep 192.168.37.31 || echo "192.168.37.31	caasp-worker1.suse.su caasp-worker1" >> /etc/hosts
-cat /etc/hosts | grep 192.168.37.32 || echo "192.168.37.32	caasp-worker2.suse.su caasp-worker2" >> /etc/hosts
+
+touch /root/EtcHosts.t
+cat /etc/hosts | grep $MGMT_IP | grep $MGMT || echo "$MGMT_IP $MGMT_FQDN $MGMT" >> /root/EtcHosts.t 
+
+j=0
+for i in \${MASTER[@]}; do
+cat /etc/hosts | grep  \${MASTER_IP[\$j]} |grep \${MASTER[\$j]} || echo "\${MASTER_IP[\$j]} \$i.$DOMAIN \$i" >> /root/EtcHosts.t
+(( j=j+1 ))
+done
+
+j=0
+for i in \${WORKER[@]}; do
+cat /etc/hosts | grep  \${WORKER_IP[\$j]} |grep \${WORKER[\$j]}  || echo "\${WORKER_IP[\$j]} \$i.$DOMAIN \$i" >> /root/EtcHosts.t
+(( j=j+1 ))
+done
+
+Paste_top /root/EtcHosts.t /etc/hosts
+rm -f /root/EtcHosts.t
 
 }
 
@@ -47,15 +107,15 @@ Basic_Configuration_on_All () {
 echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/ipv6.conf
 
 ##resolv.conf for all
-Debug sed -i 's/NETCONFIG_DNS_STATIC_SEARCHLIST=""/NETCONFIG_DNS_STATIC_SEARCHLIST="suse.su"/g' /etc/sysconfig/network/config
-Debug sed -i 's/NETCONFIG_DNS_STATIC_SERVERS=""/NETCONFIG_DNS_STATIC_SERVERS="168.126.63.1"/g' /etc/sysconfig/network/config
+Debug sed -i 's/NETCONFIG_DNS_STATIC_SEARCHLIST=""/NETCONFIG_DNS_STATIC_SEARCHLIST="$DOMAIN"/g' /etc/sysconfig/network/config
+Debug sed -i 's/NETCONFIG_DNS_STATIC_SERVERS=""/NETCONFIG_DNS_STATIC_SERVERS="$DNS_SERVER"/g' /etc/sysconfig/network/config
 
 ## Default route
-Debug_print $'echo \'default 192.168.37.254 - -\' > /etc/sysconfig/network/routes'
-echo 'default 192.168.37.254 - -' > /etc/sysconfig/network/routes
+Debug_print $'echo \'default $GATEWAY - -\' > /etc/sysconfig/network/routes'
+echo 'default $GATEWAY - -' > /etc/sysconfig/network/routes
 
 ## Swap off for all
-systemctl stop dev-sda2.swap; systemctl mask dev-sda2.swap;
+systemctl stop dev-$SWAP_DEV.swap; systemctl mask dev-$SWAP_DEV.swap;
 swapoff -a;systemctl stop swap.target;systemctl disable swap.target;
 cat /etc/fstab | grep swap > swap.tt && sed -i "s~\$(cat swap.tt)~#\$(cat swap.tt)~g" /etc/fstab
 
@@ -84,7 +144,7 @@ sync;
 
 Chrony_for_ntp_server_on_Management () {
 Debug sed -i 's/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g' /etc/chrony.conf
-Debug sed -i 's+#allow 192.168.0.0/16+allow 192.168.0.0/16+g' /etc/chrony.conf
+Debug sed -i 's+#allow 192.168.0.0/16+allow $NTP_CLIENT_NET+g' /etc/chrony.conf
 Debug sed -i 's/#local stratum 10/local stratum 10/g' /etc/chrony.conf
 Debug systemctl restart chronyd
 }
@@ -110,12 +170,12 @@ echo $PUBLIC_KEY >> /home/sles/.ssh/authorized_keys
 Initialize_the_cluster_on_Management() {
 zypper --non-interactive in -t pattern SUSE-CaaSP-Management
 ## skuba cluster init --control-plane <LB IP/FQDN> <cluster name>
-skuba cluster init --control-plane 192.168.37.72 my-cluster
+skuba cluster init --control-plane $LB_IP my-cluster
 }
 
 Bootstrap_the_cluster_on_Management () {
 cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-Debug skuba -v 5 node bootstrap --user sles --sudo --target caasp-master1.suse.su caasp-master1
+Debug skuba -v 5 node bootstrap --user sles --sudo --target caasp-master1.$DOMAIN caasp-master1
 }
 
 Setup_kubectl_on_Management () {
@@ -129,21 +189,22 @@ Addtional_node_on_Management() {
 echo Addtional Node
 ## Addtional Master node on Management
 #cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-#Debug skuba -v 5 node join --role master --user sles --sudo --target caasp-master2.suse.su caasp-master2
+#Debug skuba -v 5 node join --role master --user sles --sudo --target caasp-master2.$DOMAIN caasp-master2
 
 ## Addtional worker node on Management
-cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-skuba -v5  node join --role worker --user sles --sudo --target caasp-worker2.suse.su caasp-worker2
+#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+#skuba -v5  node join --role worker --user sles --sudo --target caasp-worker2.$DOMAIN caasp-worker2
 
 }
 
 Helm_Deployment_on_Management () {
 # Create service account and Role Binding
-kubectl create serviceaccount –namespace kube-system tiller
-kubectl create clusterrolebinding tiller –clusterrole=cluster-admin –serviceaccount=kube-system:tiller
-#kubectl -n kube-system apply -f $LOCAL_REPO_DIR/my-tool/k8s/tiller-rbac-config.yml
+Debug kubectl create serviceaccount –namespace kube-system tiller
+Debug kubectl create clusterrolebinding tiller –clusterrole=cluster-admin –serviceaccount=kube-system:tiller
 
-Debug helm init --service-account tiller
+Debug helm init --service-account tiller --tiller-image $MGMT_FQDN/tiller:2.14.2
+#Add SUSE chart Repo
+#Debug helm repo add suse-charts https://kubernetes-charts.suse.com
 }
 
 Kubernetes_UI_on_Management () {
@@ -247,7 +308,7 @@ commonName             = "$MGMT_FQDN"            # CN=
 emailAddress           = "chris.chon@suse.com"  # CN/emailAddress=
 
 [ v3_req ]
-#subjectAltName  = DNS:caasp-lb.suse.su,DNS:caasp-mgm.suse.su # multidomain certificate
+#subjectAltName  = DNS:caasp-lb.$DOMAIN,DNS:caasp-mgm.$DOMAIN # multidomain certificate
 
 EOF
 
@@ -262,15 +323,6 @@ echo 01 > \$CADIR/serial
 openssl ca -config reg.cnf -policy policy_anything -days 3650 -out \$CADIR/certs/server_crt.pem -infiles \$CADIR/requests/server_req.pem
 
 
-}
-
-Copy_CA_Cert_on_All () {
-#This is done in basic setup procedure
-cp $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem /etc/pki/trust/anchors/cacert.pem
-# The command below will update /etc/ssl/ca-buldle.pem
-update-ca-certificates;
-
-# Need to reboot or similar job for k8s to recognize Cert
 }
 
 Local_registry_deployment_on_Management () {
@@ -316,26 +368,32 @@ Local_registry_load_images_on_Management ()
 #load and push
 for i in \$(ls $LOCAL_REPO_DIR/docker_images_file/);do
 
+Debug_print 'Result=\$(docker load -i $LOCAL_REPO_DIR/docker_images_file/\$i)'
 Result=\$(docker load -i $LOCAL_REPO_DIR/docker_images_file/\$i)
 
 ImgnamewithTar=\$(echo \$i | sed 's/\./\:/')
 ImgnamewithTag=\$(echo \$ImgnamewithTar | sed 's/\.tar//g' )
 ImgnameOnly=\${ImgnamewithTag%%:*}
 ImgnameTagOnly=\${ImgnamewithTag##*:}
+ImgnameTagnumberOnly=\$( echo \$ImgnameTagOnly | sed 's/v//g' )
 #Below is imagename with Registry
 ImgnameLoaded=\$(echo \$Result| awk -F: '{  print \$2 }' | sed 's/ //g' )
 
-echo Info: 1-ImgnamewithTar  :: 2-ImgnamewithTag  :: 3-ImgnameOnly :: 4-ImgnameTagOnly :: 5-ImgnameLoaded
-echo Info: 1-\$ImgnamewithTar  :: 2-\$ImgnamewithTag  :: 3-\$ImgnameOnly :: 4-\$ImgnameTagOnly :: 5-\$ImgnameLoaded
+echo Info: 1-ImgnamewithTar  :: 2-ImgnamewithTag  :: 3-ImgnameOnly :: 4-ImgnameTagOnly :: 5-ImgnameLoaded :: 6-ImgnameTagnumberOnly
+echo Info: 1-\$ImgnamewithTar  :: 2-\$ImgnamewithTag  :: 3-\$ImgnameOnly :: 4-\$ImgnameTagOnly :: 5-\$ImgnameLoaded :: 6-\$ImgnameTagnumberOnly
 
 Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnamewithTag
 Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnameOnly:latest
+Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnameOnly:\$ImgnameTagnumberOnly
 Debug docker push localhost/\$ImgnamewithTag
 Debug docker push localhost/\$ImgnameOnly:latest
+Debug docker push localhost/\$ImgnameOnly:\$ImgnameTagnumberOnly
 
 Debug docker image rm localhost/\$ImgnamewithTag
 Debug docker image rm localhost/\$ImgnameOnly:latest
 Debug docker image rm \$ImgnameLoaded:\$ImgnameTagOnly
+Debug docker image rm localhost/\$ImgnameOnly:\$ImgnameTagnumberOnly
+
 done
 
 }
@@ -347,7 +405,7 @@ rm -rf /etc/docker_registry
 rm -rf /var/lib/docker/registry
 
 #clean up images which are loaded on this machine.
-docker images | grep -v REPOSITORY| awk '{print "docker image rm -f "\$3   }' | bash
+#docker images | grep -v REPOSITORY| awk '{print "docker image rm "\$3   }' | bash
 }
 
 ChangeMy-clusterToLocalRegistry_on_Management () {
@@ -361,11 +419,11 @@ find . -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+regis
 #####################################################
 ## Manual Preparation for cm-scp_caasp_deployment
 ## in the $LOCAL_REPO_DIR, my-tool, cert, RPM repo and docker_images_file need to be located
-# 1. ssh-copy-id for root to client nodes
+# 1. ssh-keygen and ssh-copy-id the pub_key from management to client nodes
 # 2. Local_repo copy and my-tool setup
 # 3. Setup repositories on client nodes
 
-#EtcHosts_on_All
+EtcHosts_on_All
 #Basic_Configuration_on_All
 
 ########################################
@@ -389,9 +447,10 @@ find . -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+regis
 #Local_registry_deployment_on_Management
 #Local_registry_load_images_on_Management 
 
-## From here, tasks need to be done one by one!!!!!!!!!!!!!!!
+## From here, tasks need to be done one by one slowly!!!!!!!!!!!!!!!
 #Bootstrap_the_cluster_on_Management
 #Setup_kubectl_on_Management
+## Need manual change on hostname for the job below!
 #Addtional_node_on_Management
 
 #Helm_Deployment_on_Management
@@ -405,17 +464,16 @@ EOT
 for i in $HOSTS;
 do
 
-        echo "##########################";
+        echo "================CMD_Started==================";
         echo $i;
         scp  /tmp/$Files $i:$Target_dir;
 	ssh $i bash ${Target_dir}/${Files}
-	ssh $i rm -f ${Target_dir}/${Files}
-        echo Done;
+	#ssh $i rm -f ${Target_dir}/${Files}
+	echo "================CMD_Done==================";
         echo;
 	echo;
 
 done;
 
 rm -f /tmp/$Files;
-
-echo "CMD_Finished"
+echo "================ALL_Done==================";

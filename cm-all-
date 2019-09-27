@@ -2,7 +2,9 @@
 
 if [[ "$@" == "" ]]; then echo "no param!!" ;exit 1;fi;
 CMD="$@"
-HOSTS=$(cat ~/hostlist| grep -v ^#)
+
+#HOSTS=$(cat ~/hostlist| grep -v ^#)
+HOSTS="192.168.37.30 192.168.37.31 192.168.37.32 192.168.37.71"
 
 
 for i in $HOSTS;
