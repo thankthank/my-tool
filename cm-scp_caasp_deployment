@@ -1,13 +1,11 @@
 #!/bin/bash
 ######################################################
 ## Values below need to be configured depending on environment
-## Framework Variables
+## Framework Variables : hostname, netowrk and framwork related`
 DOMAIN="suse.su" 
 LOCAL_REPO_DIR="/root/local_repo"
 DNS_SERVER="168.126.63.1"
 GATEWAY="192.168.37.254"
-NTP_CLIENT_NET="192.168.0.0/16"
-LB_IP="192.168.37.72"
 MGMT="caasp-lb"
 MGMT_FQDN="$MGMT.$DOMAIN" #This is also FQDN of registry
 MGMT_IP="192.168.37.71"
@@ -16,19 +14,6 @@ MASTER_IP=(192.168.37.30 )
 WORKER=(caasp-worker1 caasp-worker2)
 WORKER_IP=(192.168.37.31 192.168.37.32)
 HOSTS_TEMP=(caasp-lb) # Array for temporary run
-
-##Function Variables
-SWAP_DEV="sda2" #SWAP with thie device will be removed.
-
-#########################
-## Default Configuration
-## SCP_RUN Framework Variables
-SCRIPT_NAME="CaaSP_deployment"
-Files="temp_$(date +%y%m%d%H%M%S).sh"
-Logfile="/var/log/cm-scp_caasp_deployment_$(date +%y%m%d).log"
-if [[ ! -e $Logfile ]];then touch $Logfile;fi;
-SCP_RUN_Target_dir='/root'
-HOSTS=();
 # Hostname and IP aggregation
 HOSTNAME_TOTAL=()
 HOSTNAME_TOTAL[0]=$MGMT
@@ -42,15 +27,28 @@ CAASP_TOTAL=()
 j=${#CAASP_TOTAL[@]};for i in "${MASTER[@]}";do CAASP_TOTAL[$j]=$i; ((j=j+1));done;
 j=${#CAASP_TOTAL[@]};for i in "${WORKER[@]}";do CAASP_TOTAL[$j]=$i; ((j=j+1));done;
 #echo "HOSTNAME_TOTAL : " ${#HOSTNAME_TOTAL[@]}" :" ${HOSTNAME_TOTAL[@]}
-#echo "IP_TOTAL : " ${#IP_TOTAL[@]}" :" ${IP_TOTAL[@]} 
-#echo "CAASP_TOTAL : " ${#CAASP_TOTAL[@]}" :" ${CAASP_TOTAL[@]}
+
+##Function Variables
+SWAP_DEV="sda2" #SWAP with thie device will be removed.
+LB_IP="192.168.37.72"
+NTP_CLIENT_NET="192.168.0.0/16"
+
+#########################
+## Default Configuration
+## SCP_RUN Framework Variables
+SCRIPT_NAME="CaaSP_deployment"
+Files="temp_$(date +%y%m%d%H%M%S).sh"
+Logfile="/var/log/cm-scp_caasp_deployment_$(date +%y%m%d).log"
+if [[ ! -e $Logfile ]];then touch $Logfile;fi;
+SCP_RUN_Target_dir='/root'
+HOSTS=();
 
 ## Function Variables
 PUBLIC_KEY=$(cat /home/sles/.ssh/id_rsa.pub)
 CACERT=$(cat $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem)
 
 
-
+#########################
 ##Generated the file
 cat << EOT > /tmp/$Files
 MASTER=(${MASTER[@]} )
@@ -96,7 +94,7 @@ cat /etc/hosts | grep -v ^# |  grep -w \${HOSTNAME_TOTAL[\$j]} ||echo "\${IP_TOT
 
 }
 
-Basic_Configuration_on_All () {
+Basic_Network_on_All () {
 ##disable ipv6 for all
 echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/ipv6.conf
 
@@ -107,16 +105,9 @@ Debug sed -i 's/NETCONFIG_DNS_STATIC_SERVERS=""/NETCONFIG_DNS_STATIC_SERVERS="$D
 ## Default route
 Debug_print $'echo \'default $GATEWAY - -\' > /etc/sysconfig/network/routes'
 echo 'default $GATEWAY - -' > /etc/sysconfig/network/routes
+}
 
-## Swap off for all
-systemctl stop dev-$SWAP_DEV.swap; systemctl mask dev-$SWAP_DEV.swap;
-swapoff -a;systemctl stop swap.target;systemctl disable swap.target;
-cat /etc/fstab | grep swap > swap.tt && sed -i "s~\$(cat swap.tt)~#\$(cat swap.tt)~g" /etc/fstab
-
-## CPU and Memory account in systemd for all
-cat /etc/systemd/system.conf | grep ^'DefaultCPUAccounting=yes' || echo 'DefaultCPUAccounting=yes' >> /etc/systemd/system.conf
-cat /etc/systemd/system.conf | grep ^'DefaultMemoryAccounting=yes' || echo 'DefaultMemoryAccounting=yes' >> /etc/systemd/system.conf 
-
+Basic_Configuration_on_All () {
 ## Install packages for all
 Debug zypper --non-interactive in -t pattern enhanced_base 
 Debug zypper --non-interactive in sudo wget
@@ -130,6 +121,15 @@ $CACERT
 EOF
 # The command below will update /etc/ssl/ca-buldle.pem
 Debug update-ca-certificates;
+
+## CPU and Memory account in systemd for all
+cat /etc/systemd/system.conf | grep ^'DefaultCPUAccounting=yes' || echo 'DefaultCPUAccounting=yes' >> /etc/systemd/system.conf
+cat /etc/systemd/system.conf | grep ^'DefaultMemoryAccounting=yes' || echo 'DefaultMemoryAccounting=yes' >> /etc/systemd/system.conf 
+
+## Swap off for all
+systemctl stop dev-$SWAP_DEV.swap; systemctl mask dev-$SWAP_DEV.swap;
+swapoff -a;systemctl stop swap.target;systemctl disable swap.target;
+cat /etc/fstab | grep swap > swap.tt && sed -i "s~\$(cat swap.tt)~#\$(cat swap.tt)~g" /etc/fstab
 
 # Need to reboot or similar job for k8s to recognize Certa
 sync;
@@ -408,6 +408,8 @@ find . -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+regis
 
 }
 
+
+## Do not Remove Below '## Here to run'. This will be used for target setting
 ## Here to run
 
 #####################################################
@@ -418,6 +420,7 @@ find . -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+regis
 # 3. Setup repositories on client nodes
 
 EtcHosts_on_All
+#Basic_Network_on_All
 #Basic_Configuration_on_All
 
 ########################################
@@ -426,7 +429,7 @@ EtcHosts_on_All
 # ssh caasp-worker1 'echo caasp-worker1 > /etc/hostname'
 
 #Chrony_for_ntp_server_on_Management
-#Chrony_for_ntp_client_CaaSP
+#Chrony_for_ntp_client_on_CaaSP
 
 ########################################
 ## Manually add user, sles, key-gen on management node
@@ -450,21 +453,23 @@ EtcHosts_on_All
 #Helm_Deployment_on_Management
 #Kubernetes_UI_on_Management
 #Dashboard_proxy_on_Management
+#Test_on_Temp
 
+
+## Do not Remove Below '## Here done'. This will be used for target setting
 ## Here done
-
 EOT
 
-##SCP_RUN Target setting
+######################################
+##SCP_RUN_Target setting = Mapping hostname array to SCP_RUN Target
 # It looks for targets on which the script will run using function names
-# espacially, SCP_RUN target name will be reside at the end of function name after '_'. e.g. this_is_function_Management 
+# espacially, SCP_RUN_Target name will be reside at the end of function name after '_'. e.g. this_is_function_Management 
 rm -f /tmp/${SCRIPT_NAME}_HosSe.t;touch /tmp/${SCRIPT_NAME}_HosSe.t;
 rm -f /tmp/${SCRIPT_NAME}_function.t; touch /tmp/${SCRIPT_NAME}_function.t;
 awk -F_ -v VHOS="/tmp/${SCRIPT_NAME}_HosSe.t" -v VFUN="/tmp/${SCRIPT_NAME}_function.t;"  $'
 	BEGIN{VEXE=0};{
 	if($1=="## Here to run") {VEXE=1;};
-#	if(VEXE=="1") print "VEXE : "VEXE", $0:"$0;
-	if(VEXE==1 && ($0~/Management$/ || $0~/All$/ || $0~/CaaSP$/  ) && $1!~/^#/) {
+	if(VEXE==1 && ($0~/Management$/ || $0~/All$/ || $0~/CaaSP$/ || $0~/Temp$/  ) && $1!~/^#/) {
 		print "BA="$0";echo ${BA##*_} >> "VHOS;  
 		print "BA="$0";echo ${BA} >> "VFUN;  
 	};
@@ -472,20 +477,21 @@ awk -F_ -v VHOS="/tmp/${SCRIPT_NAME}_HosSe.t" -v VFUN="/tmp/${SCRIPT_NAME}_funct
 	};
 ' /usr/bin/cm-scp_caasp_deployment | bash
 SCP_RUN_Target_Num=$(awk '!a[$0]++' /tmp/${SCRIPT_NAME}_HosSe.t | wc -l) 
-SCP_RUN_TARGET_TYPE=$(awk '!a[$0]++' /tmp/${SCRIPT_NAME}_HosSe.t) 
+SCP_RUN_TARGET=$(awk '!a[$0]++' /tmp/${SCRIPT_NAME}_HosSe.t) 
 SCP_RUN_FUNCTIONS=$(awk '!a[$0]++' /tmp/${SCRIPT_NAME}_function.t)
 NUM=$SCP_RUN_Target_Num
 
-# Set up SCP_RUN Target host array with the target found above.
-if (( NUM > 1 ));then  echo "More than one SCP RUN Target as follows. Please speckfy only one type of target!";echo $SCP_RUN_TARGET_TYPE;  exit 1;
+# Set up SCP_RUN_TARGET with the enabled SCP_RUN_TARGET above
+# This part will be changed depending on script. Here, you define SCP_RUN_TARGET!
+if (( NUM > 1 ));then  echo "More than one SCP RUN Targets as follows. Please speckfy only one type of target!";echo $SCP_RUN_TARGET;  exit 1;
 else
-	if [[ $SCP_RUN_TARGET_TYPE == "Management" ]]; then HOSTS[0]=$MGMT;fi
-	if [[ $SCP_RUN_TARGET_TYPE == "All" ]]; then HOSTS=("${HOSTNAME_TOTAL[@]}");fi;
-	if [[ $SCP_RUN_TARGET_TYPE == "CaaSP" ]]; then HOSTS=("${CAASP_TOTAL[@]}");fi; 
-	if [[ $SCP_RUN_TARGET_TYPE == "Temp" ]]; then HOSTS=("${HOSTS_TEMP[@]}");fi; 
+	if [[ $SCP_RUN_TARGET == "Management" ]]; then HOSTS[0]=$MGMT;           fi;
+	if [[ $SCP_RUN_TARGET == "All" ]]; then HOSTS=("${HOSTNAME_TOTAL[@]}");  fi;
+	if [[ $SCP_RUN_TARGET == "CaaSP" ]]; then HOSTS=("${CAASP_TOTAL[@]}");   fi; 
+	if [[ $SCP_RUN_TARGET == "Temp" ]]; then HOSTS=("${HOSTS_TEMP[@]}");     fi; 
 fi;
-#rm -f /tmp/${SCRIPT_NAME}_HosSe.t;
-#rm -f /tmp/${SCRIPT_NAME}_function.t;
+rm -f /tmp/${SCRIPT_NAME}_HosSe.t;
+rm -f /tmp/${SCRIPT_NAME}_function.t;
 
 ##Script will be SCPed and run in the remote hosts
 echo;
@@ -503,7 +509,7 @@ do
         echo $i;
         scp  /tmp/$Files $i:$SCP_RUN_Target_dir;
 	ssh $i bash ${SCP_RUN_Target_dir}/${Files}
-#	ssh $i rm -f ${SCP_RUN_Target_dir}/${Files}
+	ssh $i rm -f ${SCP_RUN_Target_dir}/${Files}
 	echo "================CMD_Done==================";
         echo;
 
