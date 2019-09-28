@@ -385,6 +385,16 @@ run_awk_regularexpression_selective_run() {
 	END {print "END : SUM :"N};
 	'
 
+	awk -F_ '
+	BEGIN{VEXE=0};
+	{
+	if($1=="## Here to run") {VEXE=1; print "VEXE Set : "$1};
+#       if(VEXE=="1") print "VEXE : "VEXE", $0:"$0;
+        if1f(VEXE==1 && $0~/Management$/ && $1!~/^#/) print "This Hosts will run :" $0 ;
+        if($1=="##Hosts setting") {VEXE=0; print "VEXE released"}
+	};
+	' /usr/bin/cm-scp_caasp_deployment
+
 
 }
 awk_search_tr() {
