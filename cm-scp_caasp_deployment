@@ -3,16 +3,28 @@
 ## Values below need to be configured depending on environment
 #Below is also FQDN of registry
 DOMAIN="suse.su"
-MGMT="caasp-lb"
-MGMT_FQDN="$MGMT.$DOMAIN"
-MGMT_IP="192.168.37.71"
 LOCAL_REPO_DIR="/root/local_repo"
 DNS_SERVER="168.126.63.1"
 GATEWAY="192.168.37.254"
 SWAP_DEV="sda2"
 NTP_CLIENT_NET="192.168.0.0/16"
 LB_IP="192.168.37.72"
-# Continue to configure variables in here document!!!!!
+MGMT="caasp-lb"
+MGMT_FQDN="$MGMT.$DOMAIN"
+MGMT_IP="192.168.37.71"
+MASTER=(caasp-master1 )
+MASTER_IP=(192.168.37.30 )
+WORKER=(caasp-worker1 caasp-worker2 caasp-worker3)
+WORKER_IP=(192.168.37.31 192.168.37.32 192.168.37.33)
+# Hostname and IP aggregation
+HOSTNAME_TOTAL=()
+HOSTNAME_TOTAL[0]=$MGMT
+j=${#HOSTNAME_TOTAL[@]};for i in "${MASTER[@]}";do HOSTNAME_TOTAL[$j]=$i; ((j=j+1));done;
+j=${#HOSTNAME_TOTAL[@]};for i in "${WORKER[@]}";do HOSTNAME_TOTAL[$j]=$i; ((j=j+1));done;
+IP_TOTAL=()
+IP_TOTAL[0]=$MGMT_IP
+j=${#IP_TOTAL[@]};for i in "${MASTER_IP[@]}";do IP_TOTAL[$j]=$i; ((j=j+1));done;
+j=${#IP_TOTAL[@]};for i in "${WORKER_IP[@]}";do IP_TOTAL[$j]=$i; ((j=j+1));done;
 
 ## Default Configuration
 Files="temp_$(date +%y%m%d%H%M%S).sh"
@@ -27,22 +39,13 @@ CACERT=$(cat $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem)
 
 ##Generated the file
 cat << EOT > /tmp/$Files
-## Values below need to be configured depending on environment
-#hostname and IP
-MASTER=(caasp-master1 )
-MASTER_IP=(192.168.37.30 )
-WORKER=(caasp-worker1 caasp-worker2 caasp-worker3)
-WORKER_IP=(192.168.37.31 192.168.37.32 192.168.37.33)
+MASTER=(${MASTER[@]} )
+MASTER_IP=(${MASTER_IP[@]} )
+WORKER=(${WORKER[@]})
+WORKER_IP=(${WORKER_IP[@]})
+HOSTNAME_TOTAL=(${HOSTNAME_TOTAL[@]})
+IP_TOTAL=(${IP_TOTAL[@]})
 
-# Hostname and IP aggregation
-HOSTNAME_TOTAL=()
-HOSTNAME_TOTAL[0]=$MGMT
-j=\${#HOSTNAME_TOTAL[@]};for i in "\${MASTER[@]}";do HOSTNAME_TOTAL[\$j]=\$i; ((j=j+1));done;
-j=\${#HOSTNAME_TOTAL[@]};for i in "\${WORKER[@]}";do HOSTNAME_TOTAL[\$j]=\$i; ((j=j+1));done;
-IP_TOTAL=()
-IP_TOTAL[0]=$MGMT_IP
-j=\${#IP_TOTAL[@]};for i in "\${MASTER_IP[@]}";do IP_TOTAL[\$j]=\$i; ((j=j+1));done;
-j=\${#IP_TOTAL[@]};for i in "\${WORKER_IP[@]}";do IP_TOTAL[\$j]=\$i; ((j=j+1));done;
 
 Debug () {
 echo COMMAND:\$(date +%y%m%d_%H:%M:%S): "\$@" | tee -a $Logfile
@@ -67,7 +70,7 @@ EtcHosts_on_All () {
 
 j=0;for i in "\${HOSTNAME_TOTAL[@]}"; do
 
-#hostnames match but ip address is diffetent
+#hostnames match but ip address is different
 cat /etc/hosts | awk -v V1="\${IP_TOTAL[\$j]}" -v V2="\${HOSTNAME_TOTAL[\$j]}" \$'{
 split(\$2,a,".")
 if(a[1]==V2 && \$1!=V1) print "sed -i \'s/"\$0"/#"\$0"/g\' /etc/hosts"
@@ -76,29 +79,6 @@ if(a[1]==V2 && \$1!=V1) print "sed -i \'s/"\$0"/#"\$0"/g\' /etc/hosts"
 cat /etc/hosts | grep -v ^# |  grep -w \${HOSTNAME_TOTAL[\$j]} ||echo "\${IP_TOTAL[\$j]} \$i.$DOMAIN \$i" >> /etc/hosts
 
 (( j=j+1 ));done
-
-}
-
-EtcHosts_on_All_bak () {
-## hosts for all
-
-touch /root/EtcHosts.t
-cat /etc/hosts | grep $MGMT_IP | grep $MGMT || echo "$MGMT_IP $MGMT_FQDN $MGMT" >> /root/EtcHosts.t 
-
-j=0
-for i in \${MASTER[@]}; do
-cat /etc/hosts | grep  \${MASTER_IP[\$j]} |grep \${MASTER[\$j]} || echo "\${MASTER_IP[\$j]} \$i.$DOMAIN \$i" >> /root/EtcHosts.t
-(( j=j+1 ))
-done
-
-j=0
-for i in \${WORKER[@]}; do
-cat /etc/hosts | grep  \${WORKER_IP[\$j]} |grep \${WORKER[\$j]}  || echo "\${WORKER_IP[\$j]} \$i.$DOMAIN \$i" >> /root/EtcHosts.t
-(( j=j+1 ))
-done
-
-Paste_top /root/EtcHosts.t /etc/hosts
-rm -f /root/EtcHosts.t
 
 }
 
@@ -175,7 +155,7 @@ skuba cluster init --control-plane $LB_IP my-cluster
 
 Bootstrap_the_cluster_on_Management () {
 cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-Debug skuba -v 5 node bootstrap --user sles --sudo --target caasp-master1.$DOMAIN caasp-master1
+Debug skuba -v 5 node bootstrap --user sles --sudo --target \${MASTER[0]}.$DOMAIN \${MASTER[0]}
 }
 
 Setup_kubectl_on_Management () {
@@ -189,11 +169,11 @@ Addtional_node_on_Management() {
 echo Addtional Node
 ## Addtional Master node on Management
 #cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-#Debug skuba -v 5 node join --role master --user sles --sudo --target caasp-master2.$DOMAIN caasp-master2
+#Debug skuba -v 5 node join --role master --user sles --sudo --target \${MASTER[1]}.$DOMAIN \${MASTER[1]}
 
 ## Addtional worker node on Management
 #cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-#skuba -v5  node join --role worker --user sles --sudo --target caasp-worker2.$DOMAIN caasp-worker2
+#skuba -v5  node join --role worker --user sles --sudo --target \${WORKER[0]}.$DOMAIN \${WORKER[0]}
 
 }
 
@@ -460,6 +440,8 @@ EtcHosts_on_All
 
 EOT
 
+##Hosts setting
+
 
 for i in $HOSTS;
 do
@@ -468,7 +450,7 @@ do
         echo $i;
         scp  /tmp/$Files $i:$Target_dir;
 	ssh $i bash ${Target_dir}/${Files}
-	#ssh $i rm -f ${Target_dir}/${Files}
+#	ssh $i rm -f ${Target_dir}/${Files}
 	echo "================CMD_Done==================";
         echo;
 	echo;

@@ -263,7 +263,7 @@ global_variable_test() {
 
 }
 
-run_variable_array_test() {
+variable_array_test() {
 
 ARRAY_TEST=(abc b c d e)
 MASTER=(caasp-master1 caasp-master2 caasp-master3)
@@ -372,6 +372,21 @@ ValueBelowFunction="what?"
 
 ####################################
 #awk
+run_awk_regularexpression_selective_run() {
+
+	#Print file name incudes 'cms'
+	PWD=/root;
+	ls -al | head -3 |  \
+	awk '
+	BEGIN {N=0; print "BEGIN!!!"};
+	{if(tolower($1)~/total/) print "Middle1: Matched: "$1};
+	{if(tolower($1)!~/total/) print "Middle1: Not Matched: "$1};
+	{N=N+1;print "Middle2 : This will printed in all lines"};
+	END {print "END : SUM :"N};
+	'
+
+
+}
 awk_search_tr() {
 
 STRING='cn=laRa,dc=example,dc=com'
