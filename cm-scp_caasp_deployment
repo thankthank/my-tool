@@ -5,7 +5,7 @@
 DOMAIN="suse.su" 
 LOCAL_REPO_DIR="/root/local_repo"
 DNS_SERVER="168.126.63.1"
-GATEWAY="192.168.37.254"
+GATEWAY="192.168.37.1"
 MGMT="caasp-lb"
 MGMT_FQDN="$MGMT.$DOMAIN" #This is also FQDN of registry
 MGMT_IP="192.168.37.71"
@@ -13,7 +13,6 @@ MASTER=(caasp-master1 )
 MASTER_IP=(192.168.37.30 )
 WORKER=(caasp-worker1 caasp-worker2)
 WORKER_IP=(192.168.37.31 192.168.37.32)
-HOSTS_TEMP=(caasp-lb) # Array for temporary run
 # Hostname and IP aggregation
 HOSTNAME_TOTAL=()
 HOSTNAME_TOTAL[0]=$MGMT
@@ -26,7 +25,14 @@ j=${#IP_TOTAL[@]};for i in "${WORKER_IP[@]}";do IP_TOTAL[$j]=$i; ((j=j+1));done;
 CAASP_TOTAL=()
 j=${#CAASP_TOTAL[@]};for i in "${MASTER[@]}";do CAASP_TOTAL[$j]=$i; ((j=j+1));done;
 j=${#CAASP_TOTAL[@]};for i in "${WORKER[@]}";do CAASP_TOTAL[$j]=$i; ((j=j+1));done;
+CAASP_IP_TOTAL=()
+j=${#CAASP_IP_TOTAL[@]};for i in "${MASTER_IP[@]}";do CAASP_IP_TOTAL[$j]=$i; ((j=j+1));done;
+j=${#CAASP_IP_TOTAL[@]};for i in "${WORKER_IP[@]}";do CAASP_IP_TOTAL[$j]=$i; ((j=j+1));done;
 #echo "HOSTNAME_TOTAL : " ${#HOSTNAME_TOTAL[@]}" :" ${HOSTNAME_TOTAL[@]}
+
+# Temporary configuration
+#IP_TOTAL=(192.168.37.14)
+HOSTS_TEMP=(caasp-lb) # Array for temporary run
 
 ##Function Variables
 SWAP_DEV="sda2" #SWAP with thie device will be removed.
@@ -193,20 +199,21 @@ echo Addtional Node
 
 Helm_Deployment_on_Management () {
 # Create service account and Role Binding
-Debug kubectl create serviceaccount –namespace kube-system tiller
-Debug kubectl create clusterrolebinding tiller –clusterrole=cluster-admin –serviceaccount=kube-system:tiller
+Debug kubectl create serviceaccount --namespace kube-system tiller
+Debug kubectl create clusterrolebinding tiller --clusterrole=cluster-admin --serviceaccount=kube-system:tiller
 
-Debug helm init --service-account tiller --tiller-image $MGMT_FQDN/tiller:2.14.2
+Debug helm init --service-account tiller --tiller-image $MGMT_FQDN/kubernetes-helm/tiller:2.14.2
 #Add SUSE chart Repo
 #Debug helm repo add suse-charts https://kubernetes-charts.suse.com
+#Debug helm repo add stable https://kubernetes-charts.storage.googleapis.com
 }
 
 Kubernetes_UI_on_Management () {
 # Install heapster
-helm install --name heapster-default --namespace=kube-system stable/heapster --version=0.2.7 --set rbac.create=true
+#helm install --name heapster-default --namespace=kube-system localcharts/heapster --version=0.2.7 --set rbac.create=true
 
 # Deploy kubernetes dashboard
-helm install --namespace=kube-system --name=kubernetes-dashboard stable/kubernetes-dashboard --version=0.6.1
+helm install --namespace=kube-system --name=kubernetes-dashboard localcharts/kubernetes-dashboard --version=0.6.1
 
 # Dashboard token and access
 Secret=\$(kubectl -n kube-system get secret | grep dashboard-token | awk '{print \$1}')
@@ -356,6 +363,8 @@ Debug docker container run -d -p 443:5000 --name suse-registry -v /etc/docker_re
 
 Local_registry_load_images_on_Management ()
 {
+local REGISTRIES=(registry.suse.com k8s.gcr.io gcr.io);
+
 #clean up images which are loaded on this machine.
 #docker images | grep -v REPOSITORY| awk '{print "docker image rm -f "\$3   }' | bash
 
@@ -363,27 +372,39 @@ Local_registry_load_images_on_Management ()
 for i in \$(ls $LOCAL_REPO_DIR/docker_images_file/);do
 
 Debug_print 'Result=\$(docker load -i $LOCAL_REPO_DIR/docker_images_file/\$i)'
-Result=\$(docker load -i $LOCAL_REPO_DIR/docker_images_file/\$i)
+Result=\$(docker load -i $LOCAL_REPO_DIR/docker_images_file/\$i |egrep '^Loaded image:')
 
 ImgnamewithTar=\$(echo \$i | sed 's/\./\:/')
 ImgnamewithTag=\$(echo \$ImgnamewithTar | sed 's/\.tar//g' )
-ImgnameOnly=\${ImgnamewithTag%%:*}
 ImgnameTagOnly=\${ImgnamewithTag##*:}
 ImgnameTagnumberOnly=\$( echo \$ImgnameTagOnly | sed 's/v//g' )
 #Below is imagename with Registry
 ImgnameLoaded=\$(echo \$Result| awk -F: '{  print \$2 }' | sed 's/ //g' )
 
+for im in "\${REGISTRIES[@]}";do
+	if [[ \${ImgnameLoaded%%/*} == \$im  ]];then
+		echo "========== the detected registry name: " \$im
+		ImgnameOnly=\$(echo \$ImgnameLoaded | sed "s/\$im//" | sed 's+/++')
+		break;
+
+	else
+		echo "=========== Registry not detected. The searched registry name " \$im;
+		ImgnameOnly=\$ImgnameLoaded
+	fi 
+done;
+
 echo Info: 1-ImgnamewithTar  :: 2-ImgnamewithTag  :: 3-ImgnameOnly :: 4-ImgnameTagOnly :: 5-ImgnameLoaded :: 6-ImgnameTagnumberOnly
 echo Info: 1-\$ImgnamewithTar  :: 2-\$ImgnamewithTag  :: 3-\$ImgnameOnly :: 4-\$ImgnameTagOnly :: 5-\$ImgnameLoaded :: 6-\$ImgnameTagnumberOnly
 
-Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnamewithTag
+# Some version number start with 'v' and some version number just start with number. So I upload both if version number in upstream start with 'v'.
+Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnameOnly:\$ImgnameTagOnly
 Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnameOnly:latest
 Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnameOnly:\$ImgnameTagnumberOnly
-Debug docker push localhost/\$ImgnamewithTag
+Debug docker push localhost/\$ImgnameOnly:\$ImgnameTagOnly
 Debug docker push localhost/\$ImgnameOnly:latest
 Debug docker push localhost/\$ImgnameOnly:\$ImgnameTagnumberOnly
 
-Debug docker image rm localhost/\$ImgnamewithTag
+Debug docker image rm localhost/\$ImgnameOnly:\$ImgnameTagOnly
 Debug docker image rm localhost/\$ImgnameOnly:latest
 Debug docker image rm \$ImgnameLoaded:\$ImgnameTagOnly
 Debug docker image rm localhost/\$ImgnameOnly:\$ImgnameTagnumberOnly
@@ -404,10 +425,52 @@ rm -rf /var/lib/docker/registry
 
 ChangeMy-clusterToLocalRegistry_on_Management () {
 cd ~/my-cluster
-find . -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+registry.suse.com/caasp/v4+$MGMT_FQDN+g\' "\$1"  "  }' | bash
+find . -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+registry.suse.com+$MGMT_FQDN+g\' "\$1"  "  }' | bash
 
 }
 
+HelmLocalChartRepoDeployment_on_Management() {
+
+local LOCALCHARTS="localcharts"
+
+cd $LOCAL_REPO_DIR/helm_local_repo;
+Debug echo "pwd : \$PWD"
+for i in \$(ls $LOCAL_REPO_DIR/helm_local_repo | egrep 'tgz\$');do
+	Debug tar xvfz \$i -C $LOCAL_REPO_DIR/helm_local_repo --overwrite
+	CHART=\${i%-*}
+	Debug sed -i 's/www.changeme.com/$MGMT_FQDN/g' $LOCAL_REPO_DIR/helm_local_repo/\$CHART/values.yaml
+	Debug tar cvfz \$i \$CHART --overwrite
+	Debug rm -rf $LOCAL_REPO_DIR/helm_local_repo/\$CHART
+done
+
+
+# helm repo index creation
+Debug helm repo index $LOCAL_REPO_DIR/helm_local_repo --url http://$MGMT_FQDN:9001;
+
+# Create web server for helm chart repo and register this in repo list
+# Add localcharts if localcharts doesn't exists
+Debug_print $'RESULT=\$(helm repo list | awk -v V1=\^\$LOCALCHARTS\' \'{if(\$1~V1) print \$1 }\')'
+RESULT=\$(helm repo list | awk -v V1="^\$LOCALCHARTS" '{if(\$1~V1) print \$1 }')
+Debug echo \$RESULT
+
+if [[ ! \$RESULT =~ \$LOCALCHARTS ]]; then
+	Debug screen -dm helm serve --repo-path $LOCAL_REPO_DIR/helm_local_repo --address $MGMT_FQDN:9001
+	echo "sleep 10 sec until webserver up..."
+	for i in {10..1};do sleep 1; echo -n \$i..;done;
+	Debug helm repo add \$LOCALCHARTS http://$MGMT_FQDN:9001
+else echo "localcharts already exists!!!";
+fi
+
+Debug helm repo update
+
+
+
+}
+
+
+Test_on_CaaSP () {
+echo "test"
+}
 
 ## Do not Remove Below '## Here to run'. This will be used for target setting
 ## Here to run
@@ -419,7 +482,7 @@ find . -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+regis
 # 2. Local_repo copy and my-tool setup
 # 3. Setup repositories on client nodes
 
-EtcHosts_on_All
+#EtcHosts_on_All
 #Basic_Network_on_All
 #Basic_Configuration_on_All
 
@@ -451,9 +514,11 @@ EtcHosts_on_All
 #Addtional_node_on_Management
 
 #Helm_Deployment_on_Management
+#HelmLocalChartRepoDeployment_on_Management
 #Kubernetes_UI_on_Management
 #Dashboard_proxy_on_Management
-#Test_on_Temp
+
+#Test_on_CaaSP
 
 
 ## Do not Remove Below '## Here done'. This will be used for target setting
@@ -461,33 +526,36 @@ EtcHosts_on_All
 EOT
 
 ######################################
-##SCP_RUN_Target setting = Mapping hostname array to SCP_RUN Target
+## SCP_RUN_Target setting (= Mapping hostname array to SCP_RUN Target)
 # It looks for targets on which the script will run using function names
-# espacially, SCP_RUN_Target name will be reside at the end of function name after '_'. e.g. this_is_function_Management 
+# espacially, SCP_RUN_Target name will be reside at the end of function name after '_'. e.g. this_is_function_Management
+# Regarding SCP_RUN_Target and hoatname array mapping, two part with "#mapping" below need to be configured.
 rm -f /tmp/${SCRIPT_NAME}_HosSe.t;touch /tmp/${SCRIPT_NAME}_HosSe.t;
 rm -f /tmp/${SCRIPT_NAME}_function.t; touch /tmp/${SCRIPT_NAME}_function.t;
 awk -F_ -v VHOS="/tmp/${SCRIPT_NAME}_HosSe.t" -v VFUN="/tmp/${SCRIPT_NAME}_function.t;"  $'
 	BEGIN{VEXE=0};{
 	if($1=="## Here to run") {VEXE=1;};
-	if(VEXE==1 && ($0~/Management$/ || $0~/All$/ || $0~/CaaSP$/ || $0~/Temp$/  ) && $1!~/^#/) {
+	#mapping
+	if(VEXE==1 && ($0~/Management *$/ || $0~/All *$/ || $0~/CaaSP *$/ || $0~/Temp *$/  ) && $1!~/^ *#/) {
 		print "BA="$0";echo ${BA##*_} >> "VHOS;  
 		print "BA="$0";echo ${BA} >> "VFUN;  
 	};
 	if($1=="## Here done") {VEXE=0;}
 	};
-' /usr/bin/cm-scp_caasp_deployment | bash
+' /usr/bin/cm-scp_caasp_deployment  | bash
 SCP_RUN_Target_Num=$(awk '!a[$0]++' /tmp/${SCRIPT_NAME}_HosSe.t | wc -l) 
 SCP_RUN_TARGET=$(awk '!a[$0]++' /tmp/${SCRIPT_NAME}_HosSe.t) 
-SCP_RUN_FUNCTIONS=$(awk '!a[$0]++' /tmp/${SCRIPT_NAME}_function.t)
+SCP_RUN_FUNCTIONS=$(cat /tmp/${SCRIPT_NAME}_function.t)
 NUM=$SCP_RUN_Target_Num
 
 # Set up SCP_RUN_TARGET with the enabled SCP_RUN_TARGET above
 # This part will be changed depending on script. Here, you define SCP_RUN_TARGET!
 if (( NUM > 1 ));then  echo "More than one SCP RUN Targets as follows. Please speckfy only one type of target!";echo $SCP_RUN_TARGET;  exit 1;
 else
-	if [[ $SCP_RUN_TARGET == "Management" ]]; then HOSTS[0]=$MGMT;           fi;
-	if [[ $SCP_RUN_TARGET == "All" ]]; then HOSTS=("${HOSTNAME_TOTAL[@]}");  fi;
-	if [[ $SCP_RUN_TARGET == "CaaSP" ]]; then HOSTS=("${CAASP_TOTAL[@]}");   fi; 
+	#mapping
+	if [[ $SCP_RUN_TARGET == "Management" ]]; then HOSTS[0]=$MGMT_IP;           fi;
+	if [[ $SCP_RUN_TARGET == "All" ]]; then HOSTS=("${IP_TOTAL[@]}");  fi;
+	if [[ $SCP_RUN_TARGET == "CaaSP" ]]; then HOSTS=("${CAASP_IP_TOTAL[@]}");   fi; 
 	if [[ $SCP_RUN_TARGET == "Temp" ]]; then HOSTS=("${HOSTS_TEMP[@]}");     fi; 
 fi;
 rm -f /tmp/${SCRIPT_NAME}_HosSe.t;
