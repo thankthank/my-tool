@@ -254,6 +254,23 @@ done
 
 ################################
 #variable
+
+commandline_parameter_only_last_and_other() {
+
+PRAM="${@}";
+Files=${PRAM% *};
+Target_dir=${!#}
+HOSTS=$(cat ~/hostlist | grep -v ^#)
+
+for i in $HOSTS;
+do
+	 echo Running $i;
+	 Debug scp -r $Files $i:$Target_dir;
+done;
+
+
+}
+
 global_variable_test() {
 
 	echo GLOBAL1 : $GLOBAL1;
