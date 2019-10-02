@@ -372,7 +372,7 @@ ValueBelowFunction="what?"
 
 ####################################
 #awk
-run_awk_regularexpression_selective_run() {
+awk_regularexpression_selective_run() {
 
 	#Print file name incudes 'cms'
 	PWD=/root;
@@ -390,13 +390,47 @@ run_awk_regularexpression_selective_run() {
 	{
 	if($1=="## Here to run") {VEXE=1; print "VEXE Set : "$1};
 #       if(VEXE=="1") print "VEXE : "VEXE", $0:"$0;
-        if1f(VEXE==1 && $0~/Management$/ && $1!~/^#/) print "This Hosts will run :" $0 ;
+        if(VEXE==1 && $0~/Management$/ && $1!~/^#/) print "This Hosts will run :" $0 ;
         if($1=="##Hosts setting") {VEXE=0; print "VEXE released"}
 	};
 	' /usr/bin/cm-scp_caasp_deployment
 
 
 }
+
+awk_regularexpression_variable () {
+	LOCALCHARTS="localcharts"
+	RESULT=$(helm repo list | awk -v V1="^$LOCALCHARTS" '{if($1~V1) print $1 }')
+	Debug echo $RESULT
+
+}
+
+awk_print_singquote_doublequote()
+{
+
+
+cat tt2.yaml | awk -v sq="'" -F': ' '{
+if($0~/^ *image:/){
+	print $0;
+	split($2,REG,"/");
+	if(REG[1]~/\./){
+		gsub(/gcr\.io/,"changeme.com",$2)
+		print $1": \""$2"\"";
+	}
+	else{
+	print $1": \"changeme.com/"$2"\"";
+
+	}
+}else
+{
+	#       print $0
+}
+
+}'
+
+}
+
+
 awk_search_tr() {
 
 STRING='cn=laRa,dc=example,dc=com'
@@ -480,6 +514,17 @@ echo
 echo "`ls`"
 
 echo "\$  \' \`  \"  \\"
+
+
+}
+
+if_regularexpression () {
+
+	RESULT="aadB B"
+	LOCALCHARTS="B"
+	if [[ ! $RESULT =~ $LOCALCHARTS ]]; then
+	echo "sleep 10 sec until webserver up..."
+	fi
 
 
 }

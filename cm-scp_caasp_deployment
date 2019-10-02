@@ -210,7 +210,7 @@ Debug helm init --service-account tiller --tiller-image $MGMT_FQDN/kubernetes-he
 
 Kubernetes_UI_on_Management () {
 # Install heapster
-#helm install --name heapster-default --namespace=kube-system localcharts/heapster --version=0.2.7 --set rbac.create=true
+helm install --name heapster-default --namespace=kube-system localcharts/heapster --version=0.2.7 --set rbac.create=true
 
 # Deploy kubernetes dashboard
 helm install --namespace=kube-system --name=kubernetes-dashboard localcharts/kubernetes-dashboard --version=0.6.1
