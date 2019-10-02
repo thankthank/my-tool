@@ -1,9 +1,11 @@
 #!/bin/bash
 
-Files=$1
-Target_dir=$2
-HOSTS=$(cat ~/hostlist | grep -v ^#)
+source /usr/lib/my_lib
 
+PRAM="${@}";
+Files=${PRAM% *};
+Target_dir=${!#}
+HOSTS=$(cat ~/hostlist | grep -v ^#)
 
 for i in $HOSTS;
 do

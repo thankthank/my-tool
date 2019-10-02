@@ -52,7 +52,11 @@ HOSTS=();
 ## Function Variables
 PUBLIC_KEY=$(cat /home/sles/.ssh/id_rsa.pub)
 CACERT=$(cat $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem)
-
+# storage class and pvc with ceph rbd
+CEPH_PORT="6789"
+CEPH_MONITOR_IP_PORT1="192.168.37.78:$CEPH_PORT"
+CEPH_MONITOR_IP_PORT2="192.168.37.76:$CEPH_PORT"
+CEPH_MONITOR_IP_PORT2="192.168.37.77:$CEPH_PORT"
 
 #########################
 ##Generated the file
@@ -468,6 +472,94 @@ Debug helm repo update
 }
 
 
+StorageclassPVCwithCephRBD_on_Management() {
+
+#Locate ceph keyring and ceph.conf file in $LOCAL_REPO_DIR/ceph_conf
+Debug cm-scp $LOCAL_REPO_DIR/ceph_conf/ceph* /etc/ceph/;
+
+CEPH_SECRET=\$(ceph auth get-key client.admin)
+kubectl apply -f - << EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ceph-secret-admin
+type: "kubernetes.io/rbd"
+data:
+  key: "\$(echo \$CEPH_SECRET | base64)"
+EOF
+
+local CEPH_POOL="caasp"
+local CEPH_USER="caaspuser"
+ceph osd pool create \$CEPH_POOL 124 124
+ceph auth get-or-create client.\$CEPH_USER mon "allow r" osd "allow class-read object_prefix rbd_children, allow rwx pool=\$CEPH_POOL" -o ceph.client.user.keyring
+
+local USER_SECRET=\$(ceph auth get-key client.\$CEPH_USER)
+
+kubectl apply -f - << EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ceph-secret-user
+type: "kubernetes.io/rbd"
+data:
+  key: "\$(echo \$USER_SECRET | base64)"
+EOF
+
+kubectl apply -f - << EOF
+apiVersion: storage.k8s.io/v1beta1
+kind: StorageClass
+metadata:
+  name: ceph-rbd
+  annotations:
+    storageclass.beta.kubernetes.io/is-default-class: "true"
+provisioner: kubernetes.io/rbd
+parameters:
+  monitors: $CEPH_MONITOR_IP_PORT1, $CEPH_MONITOR_IP_PORT2, $CEPH_MONITOR_IP_PORT3
+  adminId: admin
+  adminSecretName: ceph-secret-admin
+  adminSecretNamespace: default
+  pool: \$CEPH_POOL
+  userId: \$CEPH_USER
+  userSecretName: ceph-secret-user
+EOF
+
+
+kubectl apply -f - << EOF
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: cephtest-pvc
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+EOF
+
+kubectl apply -f - << EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: storageclass-pod
+spec:
+  containers:
+  - name: nginx-storageclass
+    image: caasp-lb.suse.su/nginx
+    volumeMounts:
+    - name: rbdvol
+      mountPath: /mnt
+      readOnly: false
+  volumes:
+  - name: rbdvol
+    persistentVolumeClaim:
+      claimName: cephtest-pvc
+
+EOF
+
+}
+
+
 Test_on_CaaSP () {
 echo "test"
 }
@@ -518,6 +610,7 @@ echo "test"
 #Kubernetes_UI_on_Management
 #Dashboard_proxy_on_Management
 
+StorageclassPVCwithCephRBD_on_Management
 #Test_on_CaaSP
 
 
@@ -577,7 +670,7 @@ do
         echo $i;
         scp  /tmp/$Files $i:$SCP_RUN_Target_dir;
 	ssh $i bash ${SCP_RUN_Target_dir}/${Files}
-	ssh $i rm -f ${SCP_RUN_Target_dir}/${Files}
+#	ssh $i rm -f ${SCP_RUN_Target_dir}/${Files}
 	echo "================CMD_Done==================";
         echo;
 
