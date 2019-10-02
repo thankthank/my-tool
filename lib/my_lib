@@ -1,13 +1,16 @@
 #!/bin/bash
 
-Run_script_remote() {
+##Global variables
+TERM=$(tty)
+
+Scp_run() {
 ##########
 # $@ : remote host
 # usage 
-#	# Run_script_remote 192.168.0.11 192.168.0.12
+#	# Scp_run 192.168.0.11 192.168.0.12
 
-RANDOM_FILE=''
-RANDOM_FILE=lab_$RANDOM
+local RANDOM_FILE=''
+local RANDOM_FILE=lab_$RANDOM
 
 cat << EOT > $RANDOM_FILE
 ##########
@@ -33,3 +36,28 @@ rm -f $RANDOM_FILE
 
 }
 
+Check_parameter() {
+
+#Check parameter
+if [[ $1 == "" ]]
+then
+	echo "No repository ip address"
+	exit 1;
+fi
+
+}
+
+Debug () {
+	echo _Debug_CMD:$(date +%y%m%d_%H:%M:%S): "$@"
+	echo OUTPUT-Started:
+	"$@"
+	echo OUTPUT-Done
+}
+
+Debug_print () {
+	#Only print Command and no results. It will be used commands which include terminator such as ;, >, ||
+	# Use single quote in Single quote
+	# e.g. Debug_print $'echo \'ls -al\' | grep tt '
+
+	echo _Debug_CMD:$(date +%y%m%d_%H:%M:%S): "$@"
+}
