@@ -559,6 +559,85 @@ EOF
 
 }
 
+LoadbalancerDeployment_on_Management () {
+
+mkdir -p /etc/docker_haproxy
+cat << EOF > /etc/docker_haproxy/haproxy.cfg
+global
+  maxconn 256
+  daemon
+
+defaults
+  log     global
+  mode    http
+  option  httplog
+  option  dontlognull
+  retries 3
+  option redispatch
+  maxconn 2000
+  timeout connect   5000
+  timeout client    50s
+  timeout server    50000
+
+frontend k8s-api
+    bind :6443
+    mode tcp
+    option tcplog
+    timeout client 300000
+    default_backend k8s-api
+
+backend k8s-api
+    mode tcp
+    option tcplog
+    option tcp-check
+        timeout server 300000
+    balance roundrobin
+    default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
+
+        server caasp-master1 192.168.37.30:6443 check
+
+frontend dex
+    bind :32000
+    mode tcp
+    option tcplog
+    timeout client 300000
+    default_backend dex
+
+backend dex
+    mode tcp
+    option tcplog
+    option tcp-check
+        timeout server 300000
+    balance roundrobin
+    default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
+
+        server caasp-master1 192.168.37.30:32000 check
+
+frontend gangway
+    bind :32001
+    mode tcp
+    option tcplog
+    timeout client 300000
+    default_backend dex
+
+backend gangway
+    mode tcp
+    option tcplog
+    option tcp-check
+        timeout server 300000
+    balance roundrobin
+    default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
+
+        server caasp-master1 192.168.37.30:32001 check
+
+EOF
+
+Debug docker load -i $LOCAL_REPO_DIR/docker_images_file/haproxy.1.8.tar
+Debug docker run -d -p 6443:6443 -p 32000:32000 -p 32001:32001 --name haproxy -v /etc/docker_haproxy/haproxy.cfg:/etc/haproxy/haproxy.cfg haproxy:1.8 -f /etc/haproxy/haproxy.cfg
+
+#Debug docker container run -d -p 443:5000 --name suse-registry -v /etc/docker_registry:/etc/docker/registry -v /var/lib/docker/registry:/var/lib/registry registry.suse.com/sles12/registry:2.6.2
+}
+
 
 Test_on_CaaSP () {
 echo "test"
@@ -590,6 +669,7 @@ echo "test"
 ## Manually add user, sles, key-gen on management node
 ## useradd -m sles; su - sles;ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa
 
+#LoadbalancerDeployment_on_Management 
 #Create_a_user_for_skuba_on_All
 #Initialize_the_cluster_on_Management
 #ChangeMy-clusterToLocalRegistry_on_Management
@@ -610,7 +690,7 @@ echo "test"
 #Kubernetes_UI_on_Management
 #Dashboard_proxy_on_Management
 
-StorageclassPVCwithCephRBD_on_Management
+#StorageclassPVCwithCephRBD_on_Management
 #Test_on_CaaSP
 
 
