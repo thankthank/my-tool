@@ -37,9 +37,36 @@ kubectl -n kube-system apply -f <name>.yml
 ** Cluster info and dump
 kubectl -n kube-system cluster-info
 kubectl -n kube-system cluster-info dump
+** List containers for each pod
+kubectl get pods -o=jsonpath='{range .items[*]}{"\n"}{.metadata.name}{":\t"}{range .spec.containers[*]}{.image}{", "}{end}{end}' -n monitoring | sort
+** Interacting with running Pods and Troubleshooting
+** log with running pods
+kubectl logs my-pod                                 # dump pod logs (stdout)
+kubectl logs -l name=myLabel                        # dump pod logs, with label name=myLabel (stdout)
+kubectl logs my-pod --previous                      # dump pod logs (stdout) for a previous instantiation of a container
+kubectl logs my-pod -c my-container                 # dump pod container logs (stdout, multi-container case)
+kubectl logs -l name=myLabel -c my-container        # dump pod logs, with label name=myLabel (stdout)
+kubectl logs my-pod -c my-container --previous      # dump pod container logs (stdout, multi-container case) for a previous instantiation of a container
+kubectl logs -f my-pod                              # stream pod logs (stdout)
+kubectl logs -f my-pod -c my-container              # stream pod container logs (stdout, multi-container case)
+kubectl logs -f -l name=myLabel --all-containers    # stream all pods logs with label name=myLabel (stdout)
+kubectl run -i --tty busybox --image=busybox -- sh  # Run pod as interactive shell
+kubectl run nginx --image=nginx --restart=Never -n 
+mynamespace                                         # Run pod nginx in a specific namespace
+kubectl run nginx --image=nginx --restart=Never     # Run pod nginx and write its spec into a file called pod.yaml
+--dry-run -o yaml > pod.yaml
+** attach to running pod
+kubectl port-forward my-pod 5000:6000               # Listen on port 5000 on the local machine and forward to port 6000 on my-pod
+kubectl -n monitoring exec -it <pod name> -c <container name> -- /bin/sh
+** Get event
+kubectl get events --all-namespaces
+kubectl get events --sort-by=.metadata.creationTimestamp --all-namespaces
 
 * helm
 ** get list
 helm list
+** Delete helm chart
+helm delete <chart name>
+helm del --purge <chart name>
 
 #### The end of the guide ####'
