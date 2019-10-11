@@ -235,15 +235,20 @@ Debug helm init --service-account tiller --tiller-image $MGMT_FQDN/kubernetes-he
 
 Kubernetes_UI_on_Management () {
 # Install heapster
-helm install --name heapster-default --namespace=kube-system localcharts/heapster --version=0.2.7 --set rbac.create=true
-
+Debug helm install --name heapster-default --namespace=kube-system localcharts/heapster --version=0.2.7 --set rbac.create=true
+Wait 30
 # Deploy kubernetes dashboard
-helm install --namespace=kube-system --name=kubernetes-dashboard localcharts/kubernetes-dashboard --version=0.6.1
+Debug helm install --namespace=kube-system --name=kubernetes-dashboard localcharts/kubernetes-dashboard --version=0.6.1
+Wait 30
+# Dashboard access
+Debug kubectl -n kube-system apply -f $LOCAL_REPO_DIR/my-tool/k8s/kubernetes-dashboard-access.yml
 
-# Dashboard token and access
+# Dashboard token 
 Secret=\$(kubectl -n kube-system get secret | grep dashboard-token | awk '{print \$1}')
 kubectl -n kube-system describe secret \$Secret | grep ^token | awk '{ print \$2 }' > ~/dashboard.token
-Debug kubectl -n kube-system apply -f $LOCAL_REPO_DIR/my-tool/k8s/kubernetes-dashboard-access.yml
+
+echo 'Created a tocken as ~/dashboard.token'
+
 }
 
 Dashboard_proxy_on_Management () {
@@ -1124,6 +1129,47 @@ echo "Port 25 opened for SMTP sender"
 
 }
 
+RsyslogserverDeployment_on_Management () {
+
+#mkdir -p /var/lib/docker/rsyslog
+#touch /var/lib/docker/rsyslog/syslog
+
+#mkdir -p /etc/docker_rsyslog
+#cat << EOF > /etc/docker_rsyslog/remote.conf
+#
+## ######### Receiving Messages from Remote Hosts ##########
+## TCP Syslog Server:
+## provides TCP syslog reception and GSS-API (if compiled to support it)
+#$ModLoad imtcp.so         # load module
+###$UDPServerAddress 10.10.0.1 # force to listen on this IP only
+#$InputTCPServerRun 514 # Starts a TCP server on selected port
+#
+## UDP Syslog Server:
+##$ModLoad imudp.so         # provides UDP syslog reception
+###$UDPServerAddress 10.10.0.1 # force to listen on this IP only
+##$UDPServerRun 514         # start a UDP syslog server at standard port 514
+#
+#EOF
+
+#Debug docker image pull $MGMT_FQDN/caasp/v4/rsyslog:8.39.0
+#Debug docker run -d -p 514:514/udp -p 514:514 --name rsyslogserver -v /root/local_repo:/root/local_repo -v /etc/docker_rsyslog/remote.conf:/etc/rsyslog.d/remote.conf -v /var/lib/docker/rsyslog/syslog:/var/log/syslog $MGMT_FQDN/caasp/v4/rsyslog:8.39.0 -f /etc/rsyslog.conf
+
+
+mkdir -p /var/lib/docker/rsyslog
+touch /var/lib/docker/rsyslog/syslog
+
+Debug docker image pull $MGMT_FQDN/robbert229/rsyslog:latest
+Debug docker run -d -p 514:514/udp -p 514:514 --name rsyslogserver -v /root/local_repo:/root/local_repo -v /var/lib/docker/rsyslog/syslog:/var/log/syslog $MGMT_FQDN/robbert229/rsyslog:latest
+}
+
+CentralizedLoggingAgent_on_Management () {
+
+Debug kubectl create namespace clogging
+
+Debug helm install --namespace=clogging localcharts/log-agent-rsyslog --name rsyslog-agent --set server.host=$MGMT_IP --set server.port=514 --set server.protocol=UDP	
+
+}
+
 Test_on_Management () {
 Debug echo "test"
 Debug_print echo "print"
@@ -1175,7 +1221,7 @@ echo "print"
 #Helm_Deployment_on_Management
 #HelmLocalChartRepoDeployment_on_Management
 #Kubernetes_UI_on_Management
-#Dashboard_proxy_on_Management
+Dashboard_proxy_on_Management
 
 ## Monitoring Deployment. First, configure /etc/hosts configuration using EtcHosts_on_All function
 ## Just pick any worker node IP for monitoring.
@@ -1185,6 +1231,10 @@ echo "print"
 #Create_MonitorCertificate_on_Management
 #MonitoringStackDeployment_on_Management
 #MonitoringETCDCluster_on_Management
+
+## Centralized Logging
+#RsyslogserverDeployment_on_Management
+#CentralizedLoggingAgent_on_Management
 
 ## ETC
 
