@@ -78,18 +78,19 @@ fi
 echo "sleep \$DEFAULT_SEC seconds"
 for (( i=\$DEFAULT_SEC ; i >0 ; i--   ))
 do
-sleep 1 ;echo -n \$i..;echo;
+sleep 1 ;echo -n "\$i..";
 done
+echo;
 
 
 } 
 
 Debug () {
-echo COMMAND:\$(date +%y%m%d_%H:%M:%S): "\$@" | tee -a $Logfile
+echo '(('CMD'))' "\$@" | tee -a $Logfile
 echo -n "Press Enter to continue this command.....";read
-echo OUTPUT-Started:
+echo '(('OUTPUT-Started:\$(date +%FT%H:%M:%S)'))'
 "\$@" | tee -a $Logfile
-echo OUTPUT-Done
+echo '(('OUTPUT-Done:\$(date +%FT%H:%M:%S)'))'
 }
 
 Debug_print () {
@@ -97,8 +98,9 @@ Debug_print () {
 # Use single quote in Single quote
 # Debug_print $'echo \'ls -al\' | grep tt '
 
-echo COMMAND:\$(date +%y%m%d_%H:%M:%S): "\$@" | tee -a $Logfile
+echo '(('CMD_print'))' "\$@" | tee -a $Logfile
 echo -n "Press Enter to continue this command.....";read
+echo '(('OUTPUT:\$(date +%FT%H:%M:%S)'))'
 }
 
 Paste_top () {
@@ -168,12 +170,14 @@ Debug sed -i 's/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g' /etc/c
 Debug sed -i 's+#allow 192.168.0.0/16+allow $NTP_CLIENT_NET+g' /etc/chrony.conf
 Debug sed -i 's/#local stratum 10/local stratum 10/g' /etc/chrony.conf
 Debug systemctl restart chronyd
+Debug systemctl enable chronyd
 }
 
 Chrony_for_ntp_client_CaaSP () {
 Debug sed -i 's/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g' /etc/chrony.conf
 cat /etc/chrony.conf | grep 'server $MGMT_FQDN iburst' || echo 'server $MGMT_FQDN iburst' >> /etc/chrony.conf
 Debug systemctl restart chronyd
+Debug systemctl enable chronyd
 }
 
 Create_a_user_for_skuba_on_All () {
@@ -584,7 +588,10 @@ if [[ ! \$RESULT =~ \$LOCALCHARTS ]]; then
 	echo "sleep 10 sec until webserver up..."
 	for i in {10..1};do sleep 1; echo -n \$i..;done;
 	Debug helm repo add \$LOCALCHARTS http://$MGMT_FQDN:9001
-else echo "localcharts already exists!!!";
+else 
+	echo "localcharts already exists. Start helm serve, if there is no 9001 listening port";
+	Debug_print $'ss -pltne | grep \':9001\' || screen -dm helm serve --repo-path $LOCAL_REPO_DIR/helm_local_repo --address $MGMT_FQDN:9001'
+	ss -pltne | grep ':9001' || screen -dm helm serve --repo-path $LOCAL_REPO_DIR/helm_local_repo --address $MGMT_FQDN:9001
 fi
 
 Debug helm repo update
@@ -893,6 +900,14 @@ server:
     size: 8Gi
     ## Use an existing PersistentVolumeClaim (my-pvc)
     #existingClaim: prometheus-pvc
+  ## Additional Prometheus server Secret mounts
+  # Defines additional mounts with secrets. Secrets must be manually created in the namespace.
+  ##Remove this when adding#extraSecretMounts:
+  ##Remove this when adding#- name: etcd-certs
+    ##Remove this when adding#mountPath: /etc/secrets
+    ##Remove this when adding#secretName: etcd-certs
+    ##Remove this when adding#readOnly: true
+
 
 ## Prometheus is configured through prometheus.yml. This file and any others
 ## listed in serverFiles will be mounted into the server pod.
@@ -1062,6 +1077,40 @@ echo 'Alertmanager : https://prometheus-alertmanager.$DOMAIN:30443'
 echo 'Grafana : https://grafana.$DOMAIN:30443'
 }
 
+MonitoringETCDCluster_on_Management() {
+
+local MON_CONFIG_DIR="/etc/caasp_monitoring"
+
+mkdir -p \$MON_CONFIG_DIR/etcd;
+Debug scp caasp-master1:/etc/kubernetes/pki/etcd/* \$MON_CONFIG_DIR/etcd/;
+
+Debug kubectl -n monitoring create secret generic etcd-certs --from-file=\$MON_CONFIG_DIR/etcd/ca.crt --from-file=\$MON_CONFIG_DIR/etcd/healthcheck-client.crt --from-file=\$MON_CONFIG_DIR/etcd/healthcheck-client.key
+
+Debug sed -i 's+##Remove this when adding#++g' \$MON_CONFIG_DIR/prometheus-config-values.yaml
+
+Debug helm upgrade prometheus localcharts/prometheus --namespace monitoring --values \$MON_CONFIG_DIR/prometheus-config-values.yaml
+Wait 60
+
+echo "Check the private IP address"
+Debug kubectl get pods -n kube-system -l component=etcd -o wide
+
+echo "Configure with \'kubectl edit -n monitoring configmap prometheus-server\' as follows "
+cat << EOF >&1
+# Put under scrape_configs
+#   scrape_configs:
+    - job_name: etcd
+      static_configs:
+      - targets: ['<MASTER IP addr>:2379','<MASTER IP addr>:2379']
+      scheme: https
+      tls_config:
+        ca_file: /etc/secrets/ca.crt
+        cert_file: /etc/secrets/healthcheck-client.crt
+        key_file: /etc/secrets/healthcheck-client.key
+EOF
+
+
+}
+
 
 SMTPsender_on_Management() {
 
@@ -1076,9 +1125,9 @@ echo "Port 25 opened for SMTP sender"
 }
 
 Test_on_Management () {
-echo "test"
-Wait 10
-Wait 3
+Debug echo "test"
+Debug_print echo "print"
+echo "print"
 }
 
 ## Do not Remove Below '## Here to run'. This will be used for target setting
@@ -1129,15 +1178,17 @@ Wait 3
 #Dashboard_proxy_on_Management
 
 ## Monitoring Deployment. First, configure /etc/hosts configuration using EtcHosts_on_All function
+## Just pick any worker node IP for monitoring.
 #StorageclassPVCwithCephRBD_on_Management
 #SMTPsender_on_Management
 #NginxIngressControllerDeployment_on_Management
 #Create_MonitorCertificate_on_Management
 #MonitoringStackDeployment_on_Management
+#MonitoringETCDCluster_on_Management
 
 ## ETC
 
-Test_on_Management
+#Test_on_Management
 
 
 ## Do not Remove Below '## Here done'. This will be used for target setting

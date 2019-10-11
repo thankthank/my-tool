@@ -69,4 +69,10 @@ helm list
 helm delete <chart name>
 helm del --purge <chart name>
 
+* registry
+** list images
+curl --insecure https://caasp-lb.suse.su/v2/_catalog
+** describe or inspect each images
+skopeo inspect docker://caasp-lb.suse.su/caasp/v4/caasp-dex
+
 #### The end of the guide ####'
