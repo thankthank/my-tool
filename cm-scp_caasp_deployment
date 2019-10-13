@@ -741,77 +741,68 @@ Debug docker container rm -f haproxy;
 mkdir -p /etc/docker_haproxy
 cat << EOF > /etc/docker_haproxy/haproxy.cfg
 global
-  maxconn 256
+#Disable log below after you debug haproxy
+#  log /dev/log local0 info
   daemon
 
 defaults
   log     global
-  mode    http
-  option  httplog
+  mode    tcp
+  option  tcplog
+  option  redispatch
+  option  tcpka
   option  dontlognull
-  retries 3
-  option redispatch
+  retries 2
   maxconn 2000
-  timeout connect   5000
-  timeout client    50s
-  timeout server    50000
+  timeout connect   5s
+  timeout client    5s
+  timeout server    5s
+  timeout tunnel    86400s
 
 frontend k8s-api
     bind :6443
-    mode tcp
-    option tcplog
-    timeout client 300000
+    timeout client 5s
     default_backend k8s-api
 
 backend k8s-api
-    mode tcp
-    option tcplog
     option tcp-check
-        timeout server 300000
+        timeout server 5s
     balance roundrobin
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
         server caasp-master1 192.168.37.36:6443 check
-#        server caasp-master2 192.168.37.37:6443 check
-#        server caasp-master3 192.168.37.38:6443 check
+        server caasp-master2 192.168.37.37:6443 check
+        server caasp-master3 192.168.37.38:6443 check
 
 frontend dex
     bind :32000
-    mode tcp
-    option tcplog
-    timeout client 300000
+    timeout client 5s
     default_backend dex
 
 backend dex
-    mode tcp
-    option tcplog
     option tcp-check
-        timeout server 300000
+        timeout server 5s
     balance roundrobin
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
         server caasp-master1 192.168.37.36:32000 check
-#        server caasp-master2 192.168.37.37:32000 check
-#        server caasp-master3 192.168.37.38:32000 check
+        server caasp-master2 192.168.37.37:32000 check
+        server caasp-master3 192.168.37.38:32000 check
 
 frontend gangway
     bind :32001
-    mode tcp
-    option tcplog
-    timeout client 300000
+    timeout client 5s
     default_backend dex
 
 backend gangway
-    mode tcp
-    option tcplog
     option tcp-check
-        timeout server 300000
+        timeout server 5s
     balance roundrobin
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
         server caasp-master1 192.168.37.36:32001 check
-#        server caasp-master2 192.168.37.37:32001 check
-#        server caasp-master3 192.168.37.38:32001 check
+        server caasp-master2 192.168.37.37:32001 check
+        server caasp-master3 192.168.37.38:32001 check
 
 EOF
 
@@ -1224,6 +1215,19 @@ useradd -m sles; su - sles -c 'ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa';
 
 }
 
+PreparationBeforeDemo_on_Management () {
+
+#Debug scp -r 192.168.37.15:/root/my-tool/cm-* /usr/bin/
+echo "Change haproxy.cfg with one master node and Run below"
+
+#LoadbalancerDeployment_on_Management 
+#Debug bash /root/admin/start_service.sh
+
+
+}
+
+
+
 Test_on_Management () {
 Debug echo "test"
 Debug_print echo "print"
@@ -1264,6 +1268,7 @@ echo "print"
 #LoadbalancerDeployment_on_Management 
 
 ## k8s cluster deployment
+#PreparationBeforeDemo_on_Management
 #Initialize_the_cluster_on_Management
 #ChangeMy-clusterToLocalRegistry_on_Management
 
@@ -1290,7 +1295,7 @@ echo "print"
 
 ## Centralized Logging
 #RsyslogserverDeployment_on_Management
-CentralizedLoggingAgent_on_Management
+#CentralizedLoggingAgent_on_Management
 
 ## ETC
 
