@@ -29,6 +29,7 @@ kubectl -n kube-system get all
 ** Pod monitor
 kubectl -n kube-system get pods -o wide
 kubectl get pods --all-namespaces
+kubectl get pods -w #watch 
 ** Node monitor
 kubectl get nodes -o wide
 ** Service account monitor

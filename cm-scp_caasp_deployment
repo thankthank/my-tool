@@ -88,7 +88,7 @@ echo;
 
 Debug () {
 echo '(('CMD'))' "\$@" | tee -a $Logfile
-echo -n "Press Enter to continue this command.....";read
+while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ \$INPUT == "y" ]];then  break;fi;done
 echo '(('OUTPUT-Started:\$(date +%FT%H:%M:%S)'))'
 "\$@" | tee -a $Logfile
 echo '(('OUTPUT-Done:\$(date +%FT%H:%M:%S)'))'
@@ -100,7 +100,7 @@ Debug_print () {
 # Debug_print $'echo \'ls -al\' | grep tt '
 
 echo '(('CMD_print'))' "\$@" | tee -a $Logfile
-echo -n "Press Enter to continue this command.....";read
+while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ \$INPUT == "y" ]];then  break;fi;done
 echo '(('OUTPUT:\$(date +%FT%H:%M:%S)'))'
 }
 
@@ -219,8 +219,8 @@ echo Addtional Node
 #Debug skuba -v 5 node join --role master --user sles --sudo --target \${MASTER[2]}.$DOMAIN \${MASTER[2]}
 
 ## Addtional worker node on Management
-cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-skuba -v5  node join --role worker --user sles --sudo --target \${WORKER[2]}.$DOMAIN \${WORKER[2]}
+#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+#Debug skuba -v5  node join --role worker --user sles --sudo --target \${WORKER[2]}.$DOMAIN \${WORKER[2]}
 
 }
 
@@ -255,7 +255,7 @@ echo 'Created a tocken as ~/dashboard.token'
 
 Dashboard_proxy_on_Management () {
 zypper --non-interactive in screen; 
-screen -dm kubectl proxy --address 0.0.0.0 --accept-hosts '.*'
+Debug screen -dm kubectl proxy --address 0.0.0.0 --accept-hosts '.*'
 
 # Dashboard access using Web Browser and dashboard-token
 # http://<management Ip address>:8001/api/v1/namespaces/kube-system/services/https:kubernetes-dashboard:/proxy/#!/login
@@ -626,10 +626,11 @@ Debug zypper --non-interactive in ceph-common
 
 #Locate ceph keyring and ceph.conf file in $LOCAL_REPO_DIR/ceph_conf
 mkdir -p $LOCAL_REPO_DIR/ceph_conf
-Debug scp -r $CEPH_ADMIN_IP:/etc/ceph/ceph* $LOCAL_REPO_DIR/ceph_conf/
+Debug scp -o StrictHostKeyChecking=no -r $CEPH_ADMIN_IP:/etc/ceph/ceph* $LOCAL_REPO_DIR/ceph_conf/
 Debug cm-scp $LOCAL_REPO_DIR/ceph_conf/ceph* /etc/ceph/;
 
 CEPH_SECRET=\$(ceph auth get-key client.admin)
+Debug_print kubectl apply for ceph-secret-admin
 kubectl -n monitoring apply -f - << EOF
 apiVersion: v1
 kind: Secret
@@ -639,6 +640,7 @@ type: "kubernetes.io/rbd"
 data:
   key: "\$(echo \$CEPH_SECRET | base64)"
 EOF
+Debug_print kubectl apply for ceph-secret-admin
 kubectl apply -f - << EOF
 apiVersion: v1
 kind: Secret
@@ -650,11 +652,12 @@ data:
 EOF
 
 local CEPH_POOL="caasp-demo"
-local CEPH_USER="caaspuser"
+local CEPH_USER="caaspuserdemo"
 Debug ceph osd pool create \$CEPH_POOL 128 128
 Debug ceph auth get-or-create client.\$CEPH_USER mon "allow r" osd "allow class-read object_prefix rbd_children, allow rwx pool=\$CEPH_POOL" -o ceph.client.user.keyring
 
 local USER_SECRET=\$(ceph auth get-key client.\$CEPH_USER)
+Debug_print kubectl apply for ceph-secret-user
 kubectl -n monitoring apply -f - << EOF
 apiVersion: v1
 kind: Secret
@@ -664,6 +667,7 @@ type: "kubernetes.io/rbd"
 data:
   key: "\$(echo \$USER_SECRET | base64)"
 EOF
+Debug_print kubectl apply for ceph-secret-user
 kubectl apply -f - << EOF
 apiVersion: v1
 kind: Secret
@@ -676,6 +680,7 @@ EOF
 
 
 # SotrageClass will be shared across all namespace
+Debug_print kubectl apply for ceph-rbd storageclass
 kubectl apply -f - << EOF
 apiVersion: storage.k8s.io/v1beta1
 kind: StorageClass
@@ -1220,9 +1225,11 @@ PreparationBeforeDemo_on_Management () {
 #Debug scp -r 192.168.37.15:/root/my-tool/cm-* /usr/bin/
 echo "Change haproxy.cfg with one master node and Run below"
 
-#LoadbalancerDeployment_on_Management 
-#Debug bash /root/admin/start_service.sh
+LoadbalancerDeployment_on_Management 
+Debug bash /root/admin/start_service.sh
+Debug ceph osd pool delete caasp-demo caasp-demo --yes-i-really-really-mean-it
 
+echo "Increase Worker memory to 3072"
 
 }
 
