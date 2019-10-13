@@ -1,0 +1,2 @@
+#!/bin/bash
+kubectl get pods -o wide --all-namespaces | awk '{print $8"       "$0}' | sort

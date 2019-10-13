@@ -5,12 +5,22 @@
 
 echo $'#### The guide start from Here ####
 
-* skuba
+* skuba and caasp
 ** cluster status
 skuba cluster status
 ** ssh-agent setting
 eval "$(ssh-agent)"
 ssh-add /home/sles/.ssh/id_rsa
+** Disable auto reboot by kured
+kubectl -n kube-system annotate ds kured weave.works/kured-node-lock='{"nodeID":"manual"}'
+** Enable auto reboot by kured again
+kubectl -n kube-system annotate ds kured weave.works/kured-node-lock-
+** Shutdown cluster
+kubectl get nodes -o name | xargs -I{} kubectl cordon {}
+#power off
+** Bootup cluster
+#start LB, masters and workers
+kubectl get nodes -o name | xargs -I{} kubectl uncordon {}
 
 
 * kubectl

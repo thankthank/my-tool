@@ -5,14 +5,14 @@
 DOMAIN="suse.su" 
 LOCAL_REPO_DIR="/root/local_repo"
 DNS_SERVER="168.126.63.1"
-GATEWAY="192.168.37.1"
+GATEWAY="192.168.37.254"
 MGMT="caasp-lb"
 MGMT_FQDN="$MGMT.$DOMAIN" #This is also FQDN of registry
 MGMT_IP="192.168.37.71"
-MASTER=(caasp-master1 )
-MASTER_IP=(192.168.37.30 )
-WORKER=(caasp-worker1 caasp-worker2 monitoring prometheus prometheus-alertmanager grafana)
-WORKER_IP=(192.168.37.31 192.168.37.32 192.168.37.32 192.168.37.32 192.168.37.32 192.168.37.32)
+MASTER=(caasp-master1 caasp-master2 caasp-master3)
+MASTER_IP=(192.168.37.36 192.168.37.37 192.168.37.38)
+WORKER=(caasp-worker1 caasp-worker2 caasp-worker3 monitoring prometheus prometheus-alertmanager grafana)
+WORKER_IP=(192.168.37.39 192.168.37.40 192.168.37.41 192.168.37.39 192.168.37.39 192.168.37.39 192.168.37.39)
 # Hostname and IP aggregation
 HOSTNAME_TOTAL=()
 HOSTNAME_TOTAL[0]=$MGMT
@@ -55,6 +55,7 @@ CACERT=$(cat $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem)
 # storage class and pvc with ceph rbd
 STORAGECLASS="ceph-rbd"
 CEPH_PORT="6789"
+CEPH_ADMIN_IP="192.168.37.75"
 CEPH_MONITOR_IP_PORT1="192.168.37.78:$CEPH_PORT"
 CEPH_MONITOR_IP_PORT2="192.168.37.76:$CEPH_PORT"
 CEPH_MONITOR_IP_PORT2="192.168.37.77:$CEPH_PORT"
@@ -156,11 +157,11 @@ cat /etc/systemd/system.conf | grep ^'DefaultCPUAccounting=yes' || echo 'Default
 cat /etc/systemd/system.conf | grep ^'DefaultMemoryAccounting=yes' || echo 'DefaultMemoryAccounting=yes' >> /etc/systemd/system.conf 
 
 ## Swap off for all
-systemctl stop dev-$SWAP_DEV.swap; systemctl mask dev-$SWAP_DEV.swap;
-swapoff -a;systemctl stop swap.target;systemctl disable swap.target;
-cat /etc/fstab | grep swap > swap.tt && sed -i "s~\$(cat swap.tt)~#\$(cat swap.tt)~g" /etc/fstab
+#systemctl stop dev-$SWAP_DEV.swap; systemctl mask dev-$SWAP_DEV.swap;
+#swapoff -a;systemctl stop swap.target;systemctl disable swap.target;
+#cat /etc/fstab | grep swap > swap.tt && sed -i "s~\$(cat swap.tt)~#\$(cat swap.tt)~g" /etc/fstab
 
-# Need to reboot or similar job for k8s to recognize Certa
+# Need to reboot or similar job for k8s to recognize Cert
 sync;
 sync;
 }
@@ -173,7 +174,7 @@ Debug systemctl restart chronyd
 Debug systemctl enable chronyd
 }
 
-Chrony_for_ntp_client_CaaSP () {
+Chrony_for_ntp_client_on_CaaSP () {
 Debug sed -i 's/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g' /etc/chrony.conf
 cat /etc/chrony.conf | grep 'server $MGMT_FQDN iburst' || echo 'server $MGMT_FQDN iburst' >> /etc/chrony.conf
 Debug systemctl restart chronyd
@@ -193,9 +194,9 @@ echo $PUBLIC_KEY >> /home/sles/.ssh/authorized_keys
 }
 
 Initialize_the_cluster_on_Management() {
-zypper --non-interactive in -t pattern SUSE-CaaSP-Management
+Debug zypper --non-interactive in -t pattern SUSE-CaaSP-Management
 ## skuba cluster init --control-plane <LB IP/FQDN> <cluster name>
-skuba cluster init --control-plane $LB_IP my-cluster
+Debug skuba cluster init --control-plane $LB_IP my-cluster
 }
 
 Bootstrap_the_cluster_on_Management () {
@@ -205,6 +206,7 @@ Debug skuba -v 5 node bootstrap --user sles --sudo --target \${MASTER[0]}.$DOMAI
 
 Setup_kubectl_on_Management () {
 Debug zypper --non-interactive in kubernetes-client;
+mkdir -p ~/.kube;
 Debug ln -s ~/my-cluster/admin.conf ~/.kube/config
 }
 
@@ -214,11 +216,11 @@ Addtional_node_on_Management() {
 echo Addtional Node
 ## Addtional Master node on Management
 #cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-#Debug skuba -v 5 node join --role master --user sles --sudo --target \${MASTER[1]}.$DOMAIN \${MASTER[1]}
+#Debug skuba -v 5 node join --role master --user sles --sudo --target \${MASTER[2]}.$DOMAIN \${MASTER[2]}
 
 ## Addtional worker node on Management
-#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-#skuba -v5  node join --role worker --user sles --sudo --target \${WORKER[0]}.$DOMAIN \${WORKER[0]}
+cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+skuba -v5  node join --role worker --user sles --sudo --target \${WORKER[2]}.$DOMAIN \${WORKER[2]}
 
 }
 
@@ -559,14 +561,17 @@ rm -rf /var/lib/docker/registry
 }
 
 ChangeMy-clusterToLocalRegistry_on_Management () {
-cd ~/my-cluster
-find . -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+registry.suse.com+$MGMT_FQDN+g\' "\$1"  "  }' | bash
+
+Debug_print $'find ~/my-cluster -type f  | xargs grep -i registry | awk -F: \$\'{ print " sed -i \\'s+registry.suse.com+$MGMT_FQDN+g\\' "\$1"  "  }\' | bash'
+find ~/my-cluster -type f  | xargs grep -i registry | awk -F: \$'{ print " sed -i \'s+registry.suse.com+$MGMT_FQDN+g\' "\$1"  "  }' | bash
 
 }
 
 HelmLocalChartRepoDeployment_on_Management() {
 
 local LOCALCHARTS="localcharts"
+
+Debug zypper --non-interactive in helm
 
 cd $LOCAL_REPO_DIR/helm_local_repo;
 Debug echo "pwd : \$PWD"
@@ -578,6 +583,14 @@ for i in \$(ls $LOCAL_REPO_DIR/helm_local_repo | egrep 'tgz\$');do
 	Debug rm -rf $LOCAL_REPO_DIR/helm_local_repo/\$CHART
 done
 
+# helm init --client-only
+Debug helm init --client-only
+
+cat << EOF > /root/.helm/repository/repositories.yaml
+apiVersion: v1
+generated: "2019-10-01T13:14:33.041010765+09:00"
+repositories:
+EOF
 
 # helm repo index creation
 Debug helm repo index $LOCAL_REPO_DIR/helm_local_repo --url http://$MGMT_FQDN:9001;
@@ -591,7 +604,7 @@ Debug echo \$RESULT
 if [[ ! \$RESULT =~ \$LOCALCHARTS ]]; then
 	Debug screen -dm helm serve --repo-path $LOCAL_REPO_DIR/helm_local_repo --address $MGMT_FQDN:9001
 	echo "sleep 10 sec until webserver up..."
-	for i in {10..1};do sleep 1; echo -n \$i..;done;
+	for i in {10..1};do sleep 1; echo -n \$i..;done;echo;
 	Debug helm repo add \$LOCALCHARTS http://$MGMT_FQDN:9001
 else 
 	echo "localcharts already exists. Start helm serve, if there is no 9001 listening port";
@@ -608,7 +621,12 @@ StorageclassPVCwithCephRBD_on_Management() {
 
 Debug kubectl create namespace monitoring
 
+#Deploy ceph-common
+Debug zypper --non-interactive in ceph-common
+
 #Locate ceph keyring and ceph.conf file in $LOCAL_REPO_DIR/ceph_conf
+mkdir -p $LOCAL_REPO_DIR/ceph_conf
+Debug scp -r $CEPH_ADMIN_IP:/etc/ceph/ceph* $LOCAL_REPO_DIR/ceph_conf/
 Debug cm-scp $LOCAL_REPO_DIR/ceph_conf/ceph* /etc/ceph/;
 
 CEPH_SECRET=\$(ceph auth get-key client.admin)
@@ -621,14 +639,22 @@ type: "kubernetes.io/rbd"
 data:
   key: "\$(echo \$CEPH_SECRET | base64)"
 EOF
+kubectl apply -f - << EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ceph-secret-admin
+type: "kubernetes.io/rbd"
+data:
+  key: "\$(echo \$CEPH_SECRET | base64)"
+EOF
 
-local CEPH_POOL="caasp"
+local CEPH_POOL="caasp-demo"
 local CEPH_USER="caaspuser"
-ceph osd pool create \$CEPH_POOL 128 128
-ceph auth get-or-create client.\$CEPH_USER mon "allow r" osd "allow class-read object_prefix rbd_children, allow rwx pool=\$CEPH_POOL" -o ceph.client.user.keyring
+Debug ceph osd pool create \$CEPH_POOL 128 128
+Debug ceph auth get-or-create client.\$CEPH_USER mon "allow r" osd "allow class-read object_prefix rbd_children, allow rwx pool=\$CEPH_POOL" -o ceph.client.user.keyring
 
 local USER_SECRET=\$(ceph auth get-key client.\$CEPH_USER)
-
 kubectl -n monitoring apply -f - << EOF
 apiVersion: v1
 kind: Secret
@@ -638,6 +664,16 @@ type: "kubernetes.io/rbd"
 data:
   key: "\$(echo \$USER_SECRET | base64)"
 EOF
+kubectl apply -f - << EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ceph-secret-user
+type: "kubernetes.io/rbd"
+data:
+  key: "\$(echo \$USER_SECRET | base64)"
+EOF
+
 
 # SotrageClass will be shared across all namespace
 kubectl apply -f - << EOF
@@ -698,6 +734,10 @@ EOF
 
 LoadbalancerDeployment_on_Management () {
 
+zypper --non-interactive in docker;
+systemctl start docker; systemctl enable docker;
+Debug docker container rm -f haproxy;
+
 mkdir -p /etc/docker_haproxy
 cat << EOF > /etc/docker_haproxy/haproxy.cfg
 global
@@ -731,7 +771,9 @@ backend k8s-api
     balance roundrobin
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
-        server caasp-master1 192.168.37.30:6443 check
+        server caasp-master1 192.168.37.36:6443 check
+#        server caasp-master2 192.168.37.37:6443 check
+#        server caasp-master3 192.168.37.38:6443 check
 
 frontend dex
     bind :32000
@@ -748,7 +790,9 @@ backend dex
     balance roundrobin
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
-        server caasp-master1 192.168.37.30:32000 check
+        server caasp-master1 192.168.37.36:32000 check
+#        server caasp-master2 192.168.37.37:32000 check
+#        server caasp-master3 192.168.37.38:32000 check
 
 frontend gangway
     bind :32001
@@ -765,12 +809,16 @@ backend gangway
     balance roundrobin
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
-        server caasp-master1 192.168.37.30:32001 check
+        server caasp-master1 192.168.37.36:32001 check
+#        server caasp-master2 192.168.37.37:32001 check
+#        server caasp-master3 192.168.37.38:32001 check
 
 EOF
 
-Debug docker load -i $LOCAL_REPO_DIR/docker_images_file/haproxy.1.8.tar
-Debug docker run -d -p 6443:6443 -p 32000:32000 -p 32001:32001 --name haproxy -v /etc/docker_haproxy/haproxy.cfg:/etc/haproxy/haproxy.cfg haproxy:1.8 -f /etc/haproxy/haproxy.cfg
+docker load -i $LOCAL_REPO_DIR/docker_images_file/haproxy.1.8.tar
+docker run -d -p 6443:6443 -p 32000:32000 -p 32001:32001 --name haproxy -v /etc/docker_haproxy/haproxy.cfg:/etc/haproxy/haproxy.cfg haproxy:1.8 -f /etc/haproxy/haproxy.cfg
+
+ip addr add $LB_IP/24 dev eth0 brd +
 
 }
 
@@ -994,7 +1042,7 @@ EOF
 Wait 1;
 
 Debug helm install --name prometheus localcharts/prometheus --namespace monitoring --values \$MON_CONFIG_DIR/prometheus-config-values.yaml
-Wait 300;
+Wait 60;
 
 ## Grafana deployment
 cat << EOF > \$MON_CONFIG_DIR/grafana-datasources.yaml
@@ -1064,7 +1112,7 @@ EOF
 Wait 1;
 
 Debug helm install --name grafana localcharts/grafana --namespace monitoring --values \$MON_CONFIG_DIR/grafana-config-values.yaml
-Wait 300;
+Wait 60;
 
 ## grafana dashboard configmap copied from https://github.com/SUSE/caasp-monitoring
 Debug cp $LOCAL_REPO_DIR/my-tool/k8s/grafana/*.yaml \$MON_CONFIG_DIR/
@@ -1099,13 +1147,13 @@ Wait 60
 echo "Check the private IP address"
 Debug kubectl get pods -n kube-system -l component=etcd -o wide
 
-echo "Configure with \'kubectl edit -n monitoring configmap prometheus-server\' as follows "
+echo "Configure with 'kubectl edit -n monitoring configmap prometheus-server' as follows "
 cat << EOF >&1
 # Put under scrape_configs
 #   scrape_configs:
     - job_name: etcd
       static_configs:
-      - targets: ['<MASTER IP addr>:2379','<MASTER IP addr>:2379']
+      - targets: ['${MASTER_IP[0]}:2379','${MASTER_IP[1]}:2379','${MASTER_IP[2]}:2379']
       scheme: https
       tls_config:
         ca_file: /etc/secrets/ca.crt
@@ -1170,6 +1218,12 @@ Debug helm install --namespace=clogging localcharts/log-agent-rsyslog --name rsy
 
 }
 
+CreateSlesUser_on_Management () {
+
+useradd -m sles; su - sles -c 'ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa';
+
+}
+
 Test_on_Management () {
 Debug echo "test"
 Debug_print echo "print"
@@ -1198,19 +1252,20 @@ echo "print"
 #Chrony_for_ntp_server_on_Management
 #Chrony_for_ntp_client_on_CaaSP
 
-########################################
-## Manually add user, sles, key-gen on management node
-## useradd -m sles; su - sles;ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa
-
-#LoadbalancerDeployment_on_Management 
+## CaaSP deployment
+#CreateSlesUser_on_Management
 #Create_a_user_for_skuba_on_All
-#Initialize_the_cluster_on_Management
-#ChangeMy-clusterToLocalRegistry_on_Management
 
 #Create_Certificate_on_Management
 #Local_registry_remove_on_Management 
 #Local_registry_deployment_on_Management
 #Local_registry_load_images_on_Management 
+#HelmLocalChartRepoDeployment_on_Management
+#LoadbalancerDeployment_on_Management 
+
+## k8s cluster deployment
+#Initialize_the_cluster_on_Management
+#ChangeMy-clusterToLocalRegistry_on_Management
 
 ## From here, tasks need to be done one by one slowly!!!!!!!!!!!!!!!
 #Bootstrap_the_cluster_on_Management
@@ -1219,9 +1274,6 @@ echo "print"
 #Addtional_node_on_Management
 
 #Helm_Deployment_on_Management
-#HelmLocalChartRepoDeployment_on_Management
-#Kubernetes_UI_on_Management
-Dashboard_proxy_on_Management
 
 ## Monitoring Deployment. First, configure /etc/hosts configuration using EtcHosts_on_All function
 ## Just pick any worker node IP for monitoring.
@@ -1232,9 +1284,13 @@ Dashboard_proxy_on_Management
 #MonitoringStackDeployment_on_Management
 #MonitoringETCDCluster_on_Management
 
+## Dashboard
+#Kubernetes_UI_on_Management
+#Dashboard_proxy_on_Management
+
 ## Centralized Logging
 #RsyslogserverDeployment_on_Management
-#CentralizedLoggingAgent_on_Management
+CentralizedLoggingAgent_on_Management
 
 ## ETC
 
