@@ -776,8 +776,8 @@ backend k8s-api
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
         server caasp-master1 192.168.37.36:6443 check
-        server caasp-master2 192.168.37.37:6443 check
-        server caasp-master3 192.168.37.38:6443 check
+#        server caasp-master2 192.168.37.37:6443 check
+#        server caasp-master3 192.168.37.38:6443 check
 
 frontend dex
     bind :32000
@@ -791,8 +791,8 @@ backend dex
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
         server caasp-master1 192.168.37.36:32000 check
-        server caasp-master2 192.168.37.37:32000 check
-        server caasp-master3 192.168.37.38:32000 check
+#        server caasp-master2 192.168.37.37:32000 check
+#        server caasp-master3 192.168.37.38:32000 check
 
 frontend gangway
     bind :32001
@@ -806,8 +806,8 @@ backend gangway
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
         server caasp-master1 192.168.37.36:32001 check
-        server caasp-master2 192.168.37.37:32001 check
-        server caasp-master3 192.168.37.38:32001 check
+#        server caasp-master2 192.168.37.37:32001 check
+#        server caasp-master3 192.168.37.38:32001 check
 
 EOF
 
@@ -1230,7 +1230,8 @@ LoadbalancerDeployment_on_Management
 
 echo 'ip addr add $LB_IP/24 dev eth0 brd +' >> /root/admin/start_service.sh
 Debug bash /root/admin/start_service.sh
-Debug ceph osd pool delete caasp-demo caasp-demo --yes-i-really-really-mean-it
+Debug ssh 192.168.37.75 ceph osd pool delete caasp-demo caasp-demo --yes-i-really-really-mean-it
+Debug rm -rf /root/my-cluster
 
 echo "Increase Worker memory to 3072"
 
@@ -1309,7 +1310,7 @@ echo "print"
 #LoadbalancerDeployment_on_Management 
 
 ## k8s cluster deployment
-PreparationBeforeDemo_on_Management
+#PreparationBeforeDemo_on_Management
 #Initialize_the_cluster_on_Management
 #ChangeMy-clusterToLocalRegistry_on_Management
 
