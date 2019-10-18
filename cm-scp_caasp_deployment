@@ -2,8 +2,8 @@
 ######################################################
 ## Values below need to be configured depending on environment
 ## Framework Variables : hostname, netowrk and framwork related`
-DOMAIN="suse.su" 
-LOCAL_REPO_DIR="/root/local_repo"
+DOMAIN="suse.su" # DOMAIN name for this lab. 
+LOCAL_REPO_DIR="/root/local_repo" # The location where caasp4_airgap.tar file extracted.
 DNS_SERVER="168.126.63.1"
 GATEWAY="192.168.37.254"
 MGMT="caasp-lb"
@@ -13,6 +13,18 @@ MASTER=(caasp-master1 caasp-master2 caasp-master3)
 MASTER_IP=(192.168.37.36 192.168.37.37 192.168.37.38)
 WORKER=(caasp-worker1 caasp-worker2 caasp-worker3 monitoring prometheus prometheus-alertmanager grafana)
 WORKER_IP=(192.168.37.39 192.168.37.40 192.168.37.41 192.168.37.39 192.168.37.39 192.168.37.39 192.168.37.39)
+##Function Variables
+LB_IP="192.168.37.72"
+NTP_CLIENT_NET="192.168.0.0/16"
+SWAP_DEV="sda2" #If you have SWAP partition with this device, it will be removed. If you don't have SWAP partition ignore it.
+# Storage class and pvc with ceph rbd
+STORAGECLASS="ceph-rbd"
+CEPH_PORT="6789"
+CEPH_ADMIN_IP="192.168.37.75"
+CEPH_MONITOR_IP_PORT1="192.168.37.78:$CEPH_PORT"
+CEPH_MONITOR_IP_PORT2="192.168.37.76:$CEPH_PORT"
+CEPH_MONITOR_IP_PORT2="192.168.37.77:$CEPH_PORT"
+###############################################################
 # Hostname and IP aggregation
 HOSTNAME_TOTAL=()
 HOSTNAME_TOTAL[0]=$MGMT
@@ -34,10 +46,6 @@ j=${#CAASP_IP_TOTAL[@]};for i in "${WORKER_IP[@]}";do CAASP_IP_TOTAL[$j]=$i; ((j
 #IP_TOTAL=(192.168.37.14)
 HOSTS_TEMP=(caasp-lb) # Array for temporary run
 
-##Function Variables
-SWAP_DEV="sda2" #SWAP with thie device will be removed.
-LB_IP="192.168.37.72"
-NTP_CLIENT_NET="192.168.0.0/16"
 
 #########################
 ## Default Configuration
@@ -52,13 +60,6 @@ HOSTS=();
 ## Function Variables
 PUBLIC_KEY=$(cat /home/sles/.ssh/id_rsa.pub)
 CACERT=$(cat $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem)
-# storage class and pvc with ceph rbd
-STORAGECLASS="ceph-rbd"
-CEPH_PORT="6789"
-CEPH_ADMIN_IP="192.168.37.75"
-CEPH_MONITOR_IP_PORT1="192.168.37.78:$CEPH_PORT"
-CEPH_MONITOR_IP_PORT2="192.168.37.76:$CEPH_PORT"
-CEPH_MONITOR_IP_PORT2="192.168.37.77:$CEPH_PORT"
 
 #########################
 ##Generated the file
