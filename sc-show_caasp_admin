@@ -72,6 +72,8 @@ kubectl -n monitoring exec -it <pod name> -c <container name> -- /bin/sh
 ** Get event
 kubectl get events --all-namespaces
 kubectl get events --sort-by=.metadata.creationTimestamp --all-namespaces
+** List all api
+kubectl api-resources
 
 * helm
 ** get list
