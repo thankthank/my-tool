@@ -1269,6 +1269,31 @@ EOF
 
 }
 
+RereshRepo_on_CaaSP () {
+
+Debug zypper --non-interactive ref;
+}
+
+UpdateNodes_on_Management () {
+
+#Debug zypper --non-interactive up skuba;
+cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+
+
+## Node Updates have to be applied separately to each node, starting with the control plane all the way down to the worker nodes.
+## During the upgrade all the pods in the worker node will be restarted so it is recommended to drain the pods if your application requires high availability. In most cases, the restart is handled by replicaSet.
+#Debug skuba cluster upgrade plan;
+#Debug skuba -v 5 node upgrade apply --target ${MASTER_IP[0]} --user sles --sudo
+#Debug skuba node upgrade apply --target ${WORKER_IP[0]} --user sles --sudo
+
+# Addon Updates
+Debug skuba addon upgrade plan;
+ChangeMy-clusterToLocalRegistry_on_Management
+Debug skuba -v 5 addon upgrade apply 
+
+
+
+}
 
 
 Test_on_Management () {
@@ -1340,6 +1365,16 @@ echo "print"
 ## Centralized Logging
 #RsyslogserverDeployment_on_Management
 #CentralizedLoggingAgent_on_Management
+
+## Update nodes
+## 0. OS manual update configuration
+## 1. Copy the airgap tar file and overwrite into the same directory
+## 2. Deploy Repo on Management and refersh repo by 'zypper ref' on Management
+#RereshRepo_on_CaaSP
+#Local_registry_load_images_on_Management
+#HelmLocalChartRepoDeployment_on_Management
+## OS update
+UpdateNodes_on_Management
 
 ## ETC
 
