@@ -162,6 +162,12 @@ cat /etc/systemd/system.conf | grep ^'DefaultMemoryAccounting=yes' || echo 'Defa
 #swapoff -a;systemctl stop swap.target;systemctl disable swap.target;
 #cat /etc/fstab | grep swap > swap.tt && sed -i "s~\$(cat swap.tt)~#\$(cat swap.tt)~g" /etc/fstab
 
+## Uniqueue Machine ID for all
+Debug rm -f /etc/machine-id
+Debug dbus-uuidgen --ensure
+Debug systemd-machine-id-setup
+Debug systemctl restart systemd-journald
+
 # Need to reboot or similar job for k8s to recognize Cert
 sync;
 sync;
@@ -216,8 +222,9 @@ Addtional_node_on_Management() {
 
 echo Addtional Node
 ## Addtional Master node on Management
-#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
 #Debug skuba -v 5 node join --role master --user sles --sudo --target \${MASTER[2]}.$DOMAIN \${MASTER[2]}
+Debug skuba -v 5 node join --role master --user sles --sudo --target \${WORKER[0]}.$DOMAIN \${WORKER[0]}
 
 ## Addtional worker node on Management
 #cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
@@ -509,7 +516,7 @@ local REGISTRIES=(registry.suse.com k8s.gcr.io gcr.io quay.io);
 #load and push
 for i in \$(ls $LOCAL_REPO_DIR/docker_images_file/);do
 
-Debug_print 'Result=\$(docker load -i $LOCAL_REPO_DIR/docker_images_file/\$i)'
+#Debug_print 'Result=\$(docker load -i $LOCAL_REPO_DIR/docker_images_file/\$i)'
 Result=\$(docker load -i $LOCAL_REPO_DIR/docker_images_file/\$i |egrep '^Loaded image:')
 
 ImgnamewithTar=\$(echo \$i | sed 's/\./\:/')
@@ -535,17 +542,17 @@ echo Info: 1-ImgnamewithTar  :: 2-ImgnamewithTag  :: 3-ImgnameOnly :: 4-ImgnameT
 echo Info: 1-\$ImgnamewithTar  :: 2-\$ImgnamewithTag  :: 3-\$ImgnameOnly :: 4-\$ImgnameTagOnly :: 5-\$ImgnameLoaded :: 6-\$ImgnameTagnumberOnly
 
 # Some version number start with 'v' and some version number just start with number. So I upload both if version number in upstream start with 'v'.
-Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnameOnly:\$ImgnameTagOnly
-Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnameOnly:latest
-Debug docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnameOnly:\$ImgnameTagnumberOnly
-Debug docker push localhost/\$ImgnameOnly:\$ImgnameTagOnly
-Debug docker push localhost/\$ImgnameOnly:latest
-Debug docker push localhost/\$ImgnameOnly:\$ImgnameTagnumberOnly
+docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnameOnly:\$ImgnameTagOnly
+docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnameOnly:latest
+docker tag \$ImgnameLoaded:\$ImgnameTagOnly localhost/\$ImgnameOnly:\$ImgnameTagnumberOnly
+docker push localhost/\$ImgnameOnly:\$ImgnameTagOnly
+docker push localhost/\$ImgnameOnly:latest
+docker push localhost/\$ImgnameOnly:\$ImgnameTagnumberOnly
 
-Debug docker image rm localhost/\$ImgnameOnly:\$ImgnameTagOnly
-Debug docker image rm localhost/\$ImgnameOnly:latest
-Debug docker image rm \$ImgnameLoaded:\$ImgnameTagOnly
-Debug docker image rm localhost/\$ImgnameOnly:\$ImgnameTagnumberOnly
+docker image rm localhost/\$ImgnameOnly:\$ImgnameTagOnly
+docker image rm localhost/\$ImgnameOnly:latest
+docker image rm \$ImgnameLoaded:\$ImgnameTagOnly
+docker image rm localhost/\$ImgnameOnly:\$ImgnameTagnumberOnly
 
 done
 
@@ -777,8 +784,8 @@ backend k8s-api
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
         server caasp-master1 192.168.37.36:6443 check
-        server caasp-master2 192.168.37.37:6443 check
-        server caasp-master3 192.168.37.38:6443 check
+#        server caasp-master2 192.168.37.37:6443 check
+#        server caasp-master3 192.168.37.38:6443 check
 
 frontend dex
     bind :32000
@@ -792,8 +799,8 @@ backend dex
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
         server caasp-master1 192.168.37.36:32000 check
-        server caasp-master2 192.168.37.37:32000 check
-        server caasp-master3 192.168.37.38:32000 check
+#        server caasp-master2 192.168.37.37:32000 check
+#        server caasp-master3 192.168.37.38:32000 check
 
 frontend gangway
     bind :32001
@@ -807,8 +814,8 @@ backend gangway
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
         server caasp-master1 192.168.37.36:32001 check
-        server caasp-master2 192.168.37.37:32001 check
-        server caasp-master3 192.168.37.38:32001 check
+#        server caasp-master2 192.168.37.37:32001 check
+#        server caasp-master3 192.168.37.38:32001 check
 
 EOF
 
@@ -1295,6 +1302,20 @@ Debug skuba -v 5 addon upgrade apply
 
 }
 
+registry_proxy_on_CaaSP () {
+
+Debug mkdir -p /etc/containers	
+Debug_print Add proxy configuraion in /etc/containers/registries.conf 
+cat << EOF > /etc/containers/registries.conf
+[[registry]]
+prefix = "registry.suse.com"
+location = "$MGMT_FQDN"
+[[registry]]
+prefix = "registry.opensuse.org/kubic"
+location = "caasp-lb.suse.su/caasp/v4"
+EOF
+
+}
 
 Test_on_Management () {
 Debug echo "test"
@@ -1327,6 +1348,7 @@ echo "print"
 ## CaaSP deployment
 #CreateSlesUser_on_Management
 #Create_a_user_for_skuba_on_All
+#registry_proxy_on_CaaSP
 
 #Create_Certificate_on_Management
 #Local_registry_remove_on_Management 
@@ -1338,13 +1360,12 @@ echo "print"
 ## k8s cluster deployment
 #PreparationBeforeDemo_on_Management
 #Initialize_the_cluster_on_Management
-#ChangeMy-clusterToLocalRegistry_on_Management
 
 ## From here, tasks need to be done one by one slowly!!!!!!!!!!!!!!!
 #Bootstrap_the_cluster_on_Management
 #Setup_kubectl_on_Management
 ## Need manual change on hostname for the job below!
-#Addtional_node_on_Management
+Addtional_node_on_Management
 #LoadbalancerDeployment_on_Management 
 
 #Helm_Deployment_on_Management
@@ -1374,7 +1395,7 @@ echo "print"
 #Local_registry_load_images_on_Management
 #HelmLocalChartRepoDeployment_on_Management
 ## OS update
-UpdateNodes_on_Management
+#UpdateNodes_on_Management
 
 ## ETC
 
