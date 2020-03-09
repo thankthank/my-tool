@@ -222,13 +222,12 @@ Addtional_node_on_Management() {
 
 echo Addtional Node
 ## Addtional Master node on Management
-cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
 #Debug skuba -v 5 node join --role master --user sles --sudo --target \${MASTER[2]}.$DOMAIN \${MASTER[2]}
-Debug skuba -v 5 node join --role master --user sles --sudo --target \${WORKER[0]}.$DOMAIN \${WORKER[0]}
 
 ## Addtional worker node on Management
-#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-#Debug skuba -v5  node join --role worker --user sles --sudo --target \${WORKER[2]}.$DOMAIN \${WORKER[2]}
+cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+Debug skuba -v5  node join --role worker --user sles --sudo --target \${WORKER[2]}.$DOMAIN \${WORKER[2]}
 
 }
 
@@ -584,11 +583,11 @@ Debug zypper --non-interactive in helm
 cd $LOCAL_REPO_DIR/helm_local_repo;
 Debug echo "pwd : \$PWD"
 for i in \$(ls $LOCAL_REPO_DIR/helm_local_repo | egrep 'tgz\$');do
-	Debug tar xvfz \$i -C $LOCAL_REPO_DIR/helm_local_repo --overwrite
+	tar xvfz \$i -C $LOCAL_REPO_DIR/helm_local_repo --overwrite
 	CHART=\${i%-*}
-	Debug sed -i 's/www.changeme.com/$MGMT_FQDN/g' $LOCAL_REPO_DIR/helm_local_repo/\$CHART/values.yaml
-	Debug tar cvfz \$i \$CHART --overwrite
-	Debug rm -rf $LOCAL_REPO_DIR/helm_local_repo/\$CHART
+	sed -i 's/www.changeme.com/$MGMT_FQDN/g' $LOCAL_REPO_DIR/helm_local_repo/\$CHART/values.yaml
+	tar cvfz \$i \$CHART --overwrite
+	rm -rf $LOCAL_REPO_DIR/helm_local_repo/\$CHART
 done
 
 # helm init --client-only
@@ -747,8 +746,8 @@ EOF
 
 LoadbalancerDeployment_on_Management () {
 
-zypper --non-interactive in docker;
-systemctl start docker; systemctl enable docker;
+#zypper --non-interactive in docker;
+#systemctl start docker; systemctl enable docker;
 Debug docker container rm -f haproxy;
 
 mkdir -p /etc/docker_haproxy
@@ -1317,6 +1316,24 @@ EOF
 
 }
 
+start_ManagementComponentsAfterReboot_on_Management () {
+
+# Start docker service
+Debug systemctl start docker
+
+# Start registry
+Debug docker start suse-registry
+
+# Add VIP
+Debug ip addr add $LB_IP/24 dev eth0 brd +
+
+# Start load Balancer
+Debug systemctl start hapeozy
+
+# Start helm serve
+Debug screen -dm helm serve --repo-path $LOCAL_REPO_DIR/helm_local_repo --address $MGMT_FQDN:9001
+}
+
 Test_on_Management () {
 Debug echo "test"
 Debug_print echo "print"
@@ -1360,7 +1377,6 @@ echo "print"
 ## k8s cluster deployment
 #PreparationBeforeDemo_on_Management
 #Initialize_the_cluster_on_Management
-
 ## From here, tasks need to be done one by one slowly!!!!!!!!!!!!!!!
 #Bootstrap_the_cluster_on_Management
 #Setup_kubectl_on_Management
@@ -1398,7 +1414,7 @@ Addtional_node_on_Management
 #UpdateNodes_on_Management
 
 ## ETC
-
+#start_ManagementComponentsAfterReboot_on_Management
 #Test_on_Management
 
 
