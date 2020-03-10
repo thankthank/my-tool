@@ -243,6 +243,10 @@ Debug dbus-uuidgen --ensure
 Debug systemd-machine-id-setup
 Debug systemctl restart systemd-journald
 
+## Firewall
+Debug systemctl stop firewalld.service
+Debug systemctl disable firewalld.service
+
 # Need to reboot or similar job for k8s to recognize Cert
 sync;
 sync;
@@ -313,6 +317,159 @@ echo "Port 25 opened for SMTP sender"
 
 ## App related functions
 
+SaltMaster_on_Management () {
+
+Debug zypper --non-interactive in -y salt-master;
+Debug systemctl enable salt-master;
+Debug systemctl start salt-master;
+
+}
+
+SaltMinion_on_All () {
+
+zypper --non-interactive in salt-minion;
+echo 'master: $MGMT_FQDN' > /etc/salt/minion.d/master.conf
+systemctl restart salt-minion;
+systemctl enable salt-minion;
+
+}
+
+SaltKeyGrain_on_Management() {
+
+Debug salt-key -F
+Debug salt-key --accept-all
+
+## This configuration disappears after reboot.
+Debug salt '*' grains.append deepsea default
+Debug salt -G 'deepsea:*' test.ping
+
+}
+
+
+Zapdisk_on_All () {
+
+echo "Implement zap disk"
+
+}
+
+DeepseaDeployment_on_Management() {
+
+zypper --non-interactive in deepsea
+# Target for deepsea
+Debug cat /srv/pillar/ceph/deepsea_minions.sls
+cat << EOF > /srv/pillar/ceph/deepsea_minions.sls
+# Choose all minions
+deepsea_minions: '*'
+# Choose minions with a deepsea grain
+#deepsea_minions: 'G@deepsea:*'
+EOF
+}
+
+UpdateNodes_on_All () {
+Debug zypper --non-interactive up
+Debug zypper --non-interactive up
+}
+
+Stage0_on_Management () {
+
+Debug echo "Run deepsea monitor in other window"
+Debug salt-run state.orch ceph.stage.0
+## 'deepsea stage run' is not working in this framework.
+#deepsea stage run ceph.stage.0
+}
+
+Stage1_on_Management () {
+
+#Debug echo "Run deepsea monitor in other window"
+#Debug salt-run state.orch ceph.stage.1
+
+Debug cp /usr/share/doc/packages/deepsea/examples/policy* /srv/pillar/ceph/proposals/
+echo;echo "/srv/pillar/ceph/proposals/policy.cfg is created"
+cat << EOF > /srv/pillar/ceph/proposals/policy.cfg
+## Cluster Assignment
+cluster-ceph/cluster/*.sls
+
+## Roles
+# ADMIN
+role-master/cluster/ses-admin*.sls
+role-admin/cluster/ses-admin*.sls
+
+# Monitoring
+role-prometheus/cluster/ses-admin*.sls
+role-grafana/cluster/ses-admin*.sls
+
+# MON
+role-mon/cluster/ses[234]*.sls
+
+# MGR (mgrs are usually colocated with mons)
+role-mgr/cluster/ses[234]*.sls
+
+# MDS
+#role-mds/cluster/mds*.sls
+
+# IGW
+#role-igw/cluster/igw*.sls
+
+# RGW
+#role-rgw/cluster/rgw*.sls
+
+# NFS
+#role-ganesha/cluster/ganesha*.sls
+
+# COMMON
+config/stack/default/global.yml
+config/stack/default/ceph/cluster.yml
+
+# Storage
+
+role-storage/cluster/ses[234]*.sls
+role-storage/cluster/ses-admin*.sls
+EOF
+
+# Public and Cluster Network configuration
+TEXT=\$(cat /srv/pillar/ceph/proposals/config/stack/default/ceph/cluster.yml | grep -v cluster_network | grep -v public_network)
+echo "\${TEXT}" > /srv/pillar/ceph/proposals/config/stack/default/ceph/cluster.yml
+TEXT=""
+cat << EOF >> /srv/pillar/ceph/proposals/config/stack/default/ceph/cluster.yml
+cluster_network: 192.168.37.0/24
+public_network: 192.168.37.0/24
+EOF
+
+}
+
+Stage2_on_Management () {
+
+Debug salt-run state.orch ceph.stage.2 
+
+## disable subvolume valication
+echo 'subvolume_init: disabled' >> /srv/pillar/ceph/stack/global.yml
+Debug salt '*' saltutil.pillar_refresh
+
+echo;echo Check pillar data
+Debug salt '*' pillar.items
+
+}
+
+Stage3_on_Management () {
+
+Debug salt-run state.orch ceph.stage.3 
+Debug ceph -s
+
+}
+
+Stage4_on_Management () {
+
+Debug salt-run state.orch ceph.stage.4
+Debug ceph -s
+
+}
+Stage5_on_Management () {
+
+Debug salt-run state.orch ceph.stage.5 
+Debug ceph -s
+
+}
+
 
 Test_on_Management () {
 Debug echo "test"
@@ -353,15 +510,43 @@ echo "print"
 ## 1. Configure for Hostname and static network (IP, Subnet MASK) using Yast or networkfile for each node.
 ## 2. Reboot all nodes
 ##
-## If you configure the network interface, eth0, you can use the function below to configure static network and hostname.
+## If you use the network interface, eth0, you can run the function below to configure static network and hostname.
 #NetworkInterfaceAndHostname_on_All
 
 #Chrony_for_ntp_server_on_Management
 #Chrony_for_ntp_client_on_SES
 
-## SES deployment
 
-Test_on_All
+## SES deployment
+#SaltMaster_on_Management
+#SaltMinion_on_All
+#UpdateNodes_on_All
+#Zapdisk_on_All
+## Reboot nodes
+#SaltKeyGrain_on_Management
+#DeepseaDeployment_on_Management
+
+## Preparation and Update stage
+#Stage0_on_Management
+
+## Discovery Stage
+#Stage1_on_Management
+
+## Configuration Stage
+#Stage2_on_Management
+
+## Deployment Stage
+#Stage3_on_Management
+
+## Additional deployment stage
+#Stage4_on_Management
+
+## Removal stage
+#Stage5_on_Management
+
+## Etc
+#Test_on_All
+#Test_on_Management
 
 ######################
 ## USER jobs Ends   ##
