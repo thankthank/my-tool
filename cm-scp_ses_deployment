@@ -153,9 +153,6 @@ Debug ln -sf $PWD/$SCRIPT_NAME $MY_TOOL_INSTALLED_DIR/$SCRIPT_NAME
 
 }
 
-## SCP_RUN Framework Ends    ##
-
-## workload function started from here
 DeployRepositories_on_Management () {
 
 cd $LOCAL_REPO_DIR
@@ -173,11 +170,24 @@ Debug ./register_client.sh $MGMT_IP
 
 MyToolDeployment_on_Management () {
 
-#for i in cm- cm-scp cm-scp_run 
-echo "":
+for i in cm- cm-scp;
+do ln -sf $LOCAL_REPO_DIR/my-tool/\$i $MY_TOOL_INSTALLED_DIR/\$i
+done;
+
+## Hostlist generation
+echo "## Ceph Nodes" > ~/hostlist;
+for i in ${MON_IP[@]};
+do
+	echo \$i >> ~/hostlist	
+done;
+echo "## MGMT Nodes" >> ~/hostlist;
+echo $MGMT_IP >> ~/hostlist;
 
 }
 
+## SCP_RUN Framework Ends    ##
+
+## workload function started from here
 EtcHosts_on_All () {
 
 j=0;for i in "\${HOSTNAME_TOTAL[@]}"; do
@@ -1419,11 +1429,11 @@ echo "print"
 ## USER jobs Begins ##
 ######################
 
-## Deployment preparation
+## Deployment tool preparation
 #AirgappedTarBallDeployment_on_Management
 #TempSshAccessForDeployment_on_All
 #DeployRepositories_on_Management
-RegisterRepositories_on_SES
+#RegisterRepositories_on_SES
 #SshKnownhost_on_Management
 #MyToolDeployment_on_Management
 
