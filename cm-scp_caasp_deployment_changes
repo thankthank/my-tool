@@ -14,19 +14,20 @@
 ## USER jobs Begins ##
 ######################
 ## Variables below need to be adapted to the deployment environment.
-## Configure Groups of Targets where this script will run 
+## IP addresses which are configured on target nodes. 
+MGMT_IP="192.168.37.75"
+MON_IP=(192.168.37.76 192.168.37.77 192.168.37.78)
+OSD_IP=(192.168.37.76 192.168.37.77 192.168.37.78)
+## Hostnames you want to configure on target nodes. Even if you already configured hostname, put the configured hostnames here and skip the hostname configuration function.
 MGMT="ses-admin"
 DOMAIN="suse.su" # DOMAIN name for this lab. 
 MGMT_FQDN="$MGMT.$DOMAIN" #This is also FQDN of registry
-MGMT_IP="192.168.37.75"
 MON=(ses2 ses3 ses4)
-MON_IP=(192.168.37.76 192.168.37.77 192.168.37.78)
 OSD=(ses2 ses3 ses4)
-OSD_IP=(192.168.37.76 192.168.37.77 192.168.37.78)
 
 ## Functionis Variables : Variables which are used by functions
 DNS_SERVER="168.126.63.1" # DNS resolve configuration
-GATEWAY="192.168.37.1" # Network gateway
+GATEWAY="192.168.37.254" # Network gateway
 NTP_CLIENT_NET="192.168.0.0/16" # NTP client
 ######################
 ## USER jobs Ends   ##
@@ -44,11 +45,6 @@ Files="temp_$(date +%y%m%d%H%M%S).sh"
 Logfile="/var/log/${SCRIPT_NAME}_$(date +%y%m%d).log"
 if [[ ! -e $Logfile ]];then touch $Logfile;fi;
 SCP_RUN_Target_dir='/root'
-
-## Function variables: Function variables used by workload functions
-PUBLIC_KEY=$(cat $LOCAL_REPO_DIR/keys/id_rsa.pub)
-PRIVATE_KEY=$(cat $LOCAL_REPO_DIR/keys/id_rsa)
-CACERT=$(cat $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem)
 
 ## Hostname and IP aggregation
 HOSTNAME_TOTAL=()
@@ -69,9 +65,14 @@ HOSTS=();
 #echo "HOSTNAME_TOTAL : " ${#HOSTNAME_TOTAL[@]}" :" ${HOSTNAME_TOTAL[@]}
 
 # Temporary configuration
-#IP_TOTAL=(192.168.37.14)
 HOSTS_TEMP=(ses-admin) # Array for temporary run
 
+## Framework Function variables
+PUBLIC_KEY=$(cat $LOCAL_REPO_DIR/keys/id_rsa.pub)
+PRIVATE_KEY=$(cat $LOCAL_REPO_DIR/keys/id_rsa)
+
+## App Function variables
+CACERT=$(cat $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem)
 
 ## The file, which will be excuited on targets, generation begins #
 # It includes libraries
@@ -226,11 +227,11 @@ Debug zypper --non-interactive up --no-recommends kernel-default
 #Debug zypper --non-interactive in -t pattern  yast2_basis
 
 ## Insert CA cert
-cat << EOF  >  /etc/pki/trust/anchors/cacert.pem
-$CACERT
-EOF
-# The command below will update /etc/ssl/ca-buldle.pem
-Debug update-ca-certificates;
+#cat << EOF  >  /etc/pki/trust/anchors/cacert.pem
+#$CACERT
+#EOF
+## The command below will update /etc/ssl/ca-buldle.pem
+#Debug update-ca-certificates;
 
 ## CPU and Memory account in systemd for all
 cat /etc/systemd/system.conf | grep ^'DefaultCPUAccounting=yes' || echo 'DefaultCPUAccounting=yes' >> /etc/systemd/system.conf
@@ -245,6 +246,42 @@ Debug systemctl restart systemd-journald
 # Need to reboot or similar job for k8s to recognize Cert
 sync;
 sync;
+}
+
+
+NetworkInterfaceAndHostname_on_All () {
+
+# Configure hostname
+IP_HERE=\$(ip addr show dev eth0 | grep global | head -1 | awk -F/ '{print \$1}' | awk '{print \$2}')
+
+(( j=0 ))
+for i in \${IP_TOTAL[@]};
+do
+	#echo i : \$i;echo IP_HERE : \$IP_HERE;
+	if [[ \$IP_HERE == \$i  ]];then
+	#Debug_print $'echo \${HOSTNAME_TOTAL[\$j]} > /etc/hostname'
+	echo \${HOSTNAME_TOTAL[\$j]} > /etc/hostname
+	hostname \${HOSTNAME_TOTAL[\$j]}
+	fi;
+	((j=j+1))	
+done
+
+# Configure IP
+cat << EOF > /etc/sysconfig/network/ifcfg-eth0
+BOOTPROTO='static'
+BROADCAST=''
+ETHTOOL_OPTIONS=''
+IPADDR='\$IP_HERE/24'
+MTU=''
+NAME=''
+NETMASK=''
+NETWORK=''
+REMOTE_IPADDR=''
+STARTMODE='auto'
+DHCLIENT_SET_DEFAULT_ROUTE='yes'
+EOF
+Debug systemctl restart network
+
 }
 
 Chrony_for_ntp_server_on_Management () {
@@ -1437,16 +1474,20 @@ echo "print"
 #SshKnownhost_on_Management
 #MyToolDeployment_on_Management
 
+## Network and System Configuation
 #EtcHosts_on_All
 #Basic_Network_on_All
 #Basic_Configuration_on_All
 
 ########################################
-### Manual configuration for Hostname and static network (IP, Subnet MASK). Reboot required
-# ssh caasp-master1 'echo caasp-master1 > /etc/hostname'
-# ssh caasp-worker1 'echo caasp-worker1 > /etc/hostname'
+### Manual do the task below
+## 1. Configure for Hostname and static network (IP, Subnet MASK) using Yast or networkfile for each node.
+## 2. Reboot all nodes
+##
+## If you configure the network interface, eth0, you can use the function below to configure static network and hostname.
+#NetworkInterfaceAndHostname_on_All
 
-#Chrony_for_ntp_server_on_Management
+Chrony_for_ntp_server_on_Management
 #Chrony_for_ntp_client_on_CaaSP
 
 ## CaaSP deployment
