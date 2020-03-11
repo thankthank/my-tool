@@ -124,6 +124,31 @@ chmod 644 ~/.ssh/id_rsa.pub
 
 }
 
+CreateUserWithKeyAccess_on_All () {
+
+fnUSER="sles"
+
+Debug useradd -m \$fnUSER
+cat /etc/sudoers | grep "\$fnUSER ALL=(ALL) NOPASSWD: ALL" || echo "\$fnUSER ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+# SSH key setting
+mkdir -p /home/\$fnUSER/.ssh;
+chmod 700 /home/\$fnUSER/.ssh;
+chown \$fnUSER:users /home/\$fnUSER/.ssh;
+
+echo "$froPUBLIC_KEY" > /home/\$fnUSER/.ssh/id_rsa.pub;
+echo "$froPRIVATE_KEY" > /home/\$fnUSER/.ssh/id_rsa;
+echo "$froPUBLIC_KEY" > /home/\$fnUSER/.ssh/authorized_keys;
+
+chmod 644 /home/\$fnUSER/.ssh/authorized_keys
+chmod 600 /home/\$fnUSER/.ssh/id_rsa
+chmod 644 /home/\$fnUSER/.ssh/id_rsa.pub
+
+chown  \$fnUSER:users /home/\$fnUSER/.ssh/authorized_keys
+chown  \$fnUSER:users /home/\$fnUSER/.ssh/id_rsa
+chown  \$fnUSER:users /home/\$fnUSER/.ssh/id_rsa.pub
+
+}
+
 SshKnownhost_on_Management () {
 
 
@@ -468,31 +493,27 @@ Debug ceph -s
 
 }
 
-CreateUserWithKeyAccess_on_All () {
 
-fnUSER="sles"
 
-Debug useradd -m \$fnUSER
-cat /etc/sudoers | grep "\$fnUSER ALL=(ALL) NOPASSWD: ALL" || echo "\$fnUSER ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-# SSH key setting
-mkdir -p /home/\$fnUSER/.ssh;
-chmod 700 /home/\$fnUSER/.ssh;
-chown \$fnUSER:users /home/\$fnUSER/.ssh;
+PoolRbdmanagement_on_Management () {
 
-echo "$froPUBLIC_KEY" > /home/\$fnUSER/.ssh/id_rsa.pub;
-echo "$froPRIVATE_KEY" > /home/\$fnUSER/.ssh/id_rsa;
-echo "$froPUBLIC_KEY" > /home/\$fnUSER/.ssh/authorized_keys;
+## Pool creation
+#Debug ceph osd pool create pool-test 128 128
+#Debug ceph osd pool set pool-test min_size 1
+#Debug ceph osd pool set pool-test size 1
 
-chmod 644 /home/\$fnUSER/.ssh/authorized_keys
-chmod 600 /home/\$fnUSER/.ssh/id_rsa
-chmod 644 /home/\$fnUSER/.ssh/id_rsa.pub
+## Pool delete
+Debug ceph tell mon.* injectargs --mon-allow-pool-delete=true
+Debug ceph osd pool delete pool-test pool-test --yes-i-really-really-mean-it
 
-chown  \$fnUSER:users /home/\$fnUSER/.ssh/authorized_keys
-chown  \$fnUSER:users /home/\$fnUSER/.ssh/id_rsa
-chown  \$fnUSER:users /home/\$fnUSER/.ssh/id_rsa.pub
-
+## RBD Creation and map
+#Debug rbd -p pool-test create testrbd --size 10240 
+#Debug rbd -p pool-test ls
+#Debug rbd map pool-test/testrbd
+#Debug rbd unmap pool-test/testrbd
 
 }
+
 
 Test_on_Management () {
 Debug echo "test"
@@ -525,8 +546,11 @@ ls
 
 ## Deployment tool preparation functions
 #AirgappedTarBallDeployment_on_Management
-## Run the function below when ssh access with key is not implemented.
+## Run the function below when ssh access with key is not implemented. 
+## If you want to use different public/private keys you can locate the keys in $LOCAL_REPO_DIR/keys.
 #TempSshAccessForDeployment_on_All
+#CreateUserWithKeyAccess_on_All
+
 #DeployRepositories_on_Management
 #RegisterRepositories_on_SES
 #SshKnownhost_on_Management
@@ -576,10 +600,12 @@ ls
 ## Removal stage
 #Stage5_on_Management
 
+## SES Operation
+PoolRbdmanagement_on_Management
+
 ## Etc
-Test_on_All
+#Test_on_All
 #Test_on_Management
-#CreateUserWithKeyAccess_on_All
 
 ######################
 ## USER jobs Ends   ##
@@ -622,7 +648,7 @@ NUM=$SCP_RUN_Target_Num
 # Set up SCP_RUN_TARGET with the enabled SCP_RUN_TARGET above
 # This part will be changed depending on script. Here, you define SCP_RUN_TARGET!
 HOSTS_PRE=();
-if (( NUM > 1 ));then  echo "More than one SCP RUN Targets as follows. Please speckfy only one type of target!";echo $SCP_RUN_TARGET;  exit 1;
+if (( NUM > 1 ));then  echo "More than one SCP RUN Targets as follows. Please specify only one type of target!";echo $SCP_RUN_TARGET;  exit 1;
 else
 	## mapping
 	if [[ $SCP_RUN_TARGET == "Management" ]]; then HOSTS_PRE[0]=$MGMT_IP;           fi;
