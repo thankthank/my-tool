@@ -35,18 +35,23 @@ NTP_CLIENT_NET="192.168.0.0/16" # NTP client
 
 
 ## SCP_RUN Framework Begins  ##
-## The file name of Tar ball which need to be deployed.
-TAR_BALL_AIRGAPPED="ses6_airgap_200309.tar" 
+## Check thses below before run this script.
+froTAR_BALL_AIRGAPPED="ses6_airgap_200309.tar" # Tar ball name
+freSCRIPT_NAME="cm-scp_ses_deployment" # This script name
 
 ## Default Configuration of framework variables. Modify this when you need to change Framework. 
-TAR_DEPLOYED_DIR="/root" # The location where airgap.tar file extracted.
-LOCAL_REPO_DIR="$TAR_DEPLOYED_DIR/local_repo" 
-SCRIPT_NAME="cm-scp_ses_deployment" # This script name
-MY_TOOL_INSTALLED_DIR="/usr/local/bin"
-Files="temp_$(date +%y%m%d%H%M%S).sh"
-Logfile="/var/log/${SCRIPT_NAME}_$(date +%y%m%d).log"
-if [[ ! -e $Logfile ]];then touch $Logfile;fi;
-SCP_RUN_Target_dir='/root'
+freUSER="root" # The user for this script to ssh nodes. It should be root or sudoer without password.
+fre_MY_TOOL_INSTALLED_DIR="/usr/local/bin"
+freGENERATED_SCRIPT="temp_$(date +%y%m%d%H%M%S).sh"
+freSCP_RUN_Target_dir='/tmp'
+# Framework Function variables
+froTAR_DEPLOYED_DIR="/root" # The location where airgap.tar file extracted.
+froLOCAL_REPO_DIR="$froTAR_DEPLOYED_DIR/local_repo" 
+froLOGFILE="/var/log/${freSCRIPT_NAME}_$(date +%y%m%d).log"
+froPUBLIC_KEY=$(cat $froLOCAL_REPO_DIR/keys/id_rsa.pub)
+froPRIVATE_KEY=$(cat $froLOCAL_REPO_DIR/keys/id_rsa)
+# App Function variables
+#CACERT=$(cat $froLOCAL_REPO_DIR/cert/natgw_cert/cacert.pem)
 
 ## Hostname and IP aggregation
 HOSTNAME_TOTAL=()
@@ -69,18 +74,11 @@ HOSTS=();
 # Temporary configuration
 HOSTS_TEMP=(ses-admin) # Array for temporary run
 
-## Framework Function variables
-PUBLIC_KEY=$(cat $LOCAL_REPO_DIR/keys/id_rsa.pub)
-PRIVATE_KEY=$(cat $LOCAL_REPO_DIR/keys/id_rsa)
-
-## App Function variables
-#CACERT=$(cat $LOCAL_REPO_DIR/cert/natgw_cert/cacert.pem)
-
 ## The file, which will be excuited on targets, generation begins #
 # It includes libraries
-cat $LOCAL_REPO_DIR/my-tool/lib/*.sh > /tmp/$Files;
+cat $froLOCAL_REPO_DIR/my-tool/lib/*.sh > /tmp/$freGENERATED_SCRIPT;
 
-cat << EOT >> /tmp/$Files
+cat << EOT >> /tmp/$freGENERATED_SCRIPT
 MON=(${MON[@]} )
 MON_IP=(${MON_IP[@]} )
 OSD=(${OSD[@]})
@@ -93,11 +91,11 @@ SES_IP_TOTAL=(${SES_IP_TOTAL[@]})
 # Libraries which use Framework values
 Debug () {
 echo;echo;echo;echo;
-echo '(('CMD'))' "\$@" | tee -a $Logfile
+echo '(('CMD'))' "\$@" | tee -a $froLOGFILE
 while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ \$INPUT == "y" ]];then  break;fi;done
-echo '(('OUTPUT-Started:\$(date +%FT%H:%M:%S)'))'
-"\$@" | tee -a $Logfile
-echo '(('OUTPUT-Done:\$(date +%FT%H:%M:%S)'))'
+echo '(('OUTPUT-Started:\$(date +%FT%H:%M:%S)'))' | tee -a $froLOGFILE
+"\$@" | tee -a $froLOGFILE
+echo '(('OUTPUT-Done:\$(date +%FT%H:%M:%S)'))' | tee -a $froLOGFILE
 }
 
 Debug_print () {
@@ -105,9 +103,9 @@ echo;echo;echo;echo;
 # Only print Command and no OUTPUT. It will be used commands which include terminator such as ;, >, ||
 # Use single quote in Single quote
 # Debug_print $'echo \'ls -al\' | grep tt '
-echo '(('CMD_print'))' "\$@" | tee -a $Logfile
+echo '(('CMD_print'))' "\$@" | tee -a $froLOGFILE
 while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ \$INPUT == "y" ]];then  break;fi;done
-echo '(('OUTPUT:\$(date +%FT%H:%M:%S)'))'
+echo '(('OUTPUT:\$(date +%FT%H:%M:%S)'))' | tee -a $froLOGFILE
 }
 
 
@@ -115,9 +113,9 @@ TempSshAccessForDeployment_on_All () {
 
 # SSH key setting
 mkdir -p ~/.ssh;chmod 700 ~/.ssh;
-echo "$PUBLIC_KEY" > ~/.ssh/id_rsa.pub;
-echo "$PRIVATE_KEY" > ~/.ssh/id_rsa;
-echo "$PUBLIC_KEY" > ~/.ssh/authorized_keys;
+echo "$froPUBLIC_KEY" > ~/.ssh/id_rsa.pub;
+echo "$froPRIVATE_KEY" > ~/.ssh/id_rsa;
+echo "$froPUBLIC_KEY" > ~/.ssh/authorized_keys;
 
 chmod 644 ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/id_rsa
@@ -144,18 +142,18 @@ done;
 AirgappedTarBallDeployment_on_Management () {
 
 # Untar the tarball
-Debug tar xvf $TAR_BALL_AIRGAPPED -C $TAR_DEPLOYED_DIR/
+Debug tar xvf $froTAR_BALL_AIRGAPPED -C $froTAR_DEPLOYED_DIR/
 # Delete the tar ball to save space
-Debug rm -f $TAR_BALL_AIRGAPPED
+Debug rm -f $froTAR_BALL_AIRGAPPED
 # Create symbolic link for deployment script.
-Debug ln -sf $PWD/$SCRIPT_NAME $MY_TOOL_INSTALLED_DIR/$SCRIPT_NAME
+Debug ln -sf $PWD/$freSCRIPT_NAME $fre_MY_TOOL_INSTALLED_DIR/$freSCRIPT_NAME
 
 
 }
 
 DeployRepositories_on_Management () {
 
-cd $LOCAL_REPO_DIR
+cd $froLOCAL_REPO_DIR
 ./deploy_repos.sh
 
 
@@ -163,7 +161,7 @@ cd $LOCAL_REPO_DIR
 
 RegisterRepositories_on_SES () {
 
-scp -o StrictHostKeyChecking=no $MGMT_IP:$LOCAL_REPO_DIR/register_client.sh ~/
+scp -o StrictHostKeyChecking=no $MGMT_IP:$froLOCAL_REPO_DIR/register_client.sh ~/
 Debug ./register_client.sh $MGMT_IP
 
 }
@@ -171,7 +169,7 @@ Debug ./register_client.sh $MGMT_IP
 MyToolDeployment_on_Management () {
 
 for i in cm- cm-scp;
-do ln -sf $LOCAL_REPO_DIR/my-tool/\$i $MY_TOOL_INSTALLED_DIR/\$i
+do ln -sf $froLOCAL_REPO_DIR/my-tool/\$i $fre_MY_TOOL_INSTALLED_DIR/\$i
 done;
 
 ## Hostlist generation
@@ -470,6 +468,31 @@ Debug ceph -s
 
 }
 
+CreateUserWithKeyAccess_on_All () {
+
+fnUSER="sles"
+
+Debug useradd -m \$fnUSER
+cat /etc/sudoers | grep "\$fnUSER ALL=(ALL) NOPASSWD: ALL" || echo "\$fnUSER ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+# SSH key setting
+mkdir -p /home/\$fnUSER/.ssh;
+chmod 700 /home/\$fnUSER/.ssh;
+chown \$fnUSER:users /home/\$fnUSER/.ssh;
+
+echo "$froPUBLIC_KEY" > /home/\$fnUSER/.ssh/id_rsa.pub;
+echo "$froPRIVATE_KEY" > /home/\$fnUSER/.ssh/id_rsa;
+echo "$froPUBLIC_KEY" > /home/\$fnUSER/.ssh/authorized_keys;
+
+chmod 644 /home/\$fnUSER/.ssh/authorized_keys
+chmod 600 /home/\$fnUSER/.ssh/id_rsa
+chmod 644 /home/\$fnUSER/.ssh/id_rsa.pub
+
+chown  \$fnUSER:users /home/\$fnUSER/.ssh/authorized_keys
+chown  \$fnUSER:users /home/\$fnUSER/.ssh/id_rsa
+chown  \$fnUSER:users /home/\$fnUSER/.ssh/id_rsa.pub
+
+
+}
 
 Test_on_Management () {
 Debug echo "test"
@@ -479,8 +502,16 @@ echo "print"
 
 Test_on_All () {
 Debug echo "test"
-Debug_print echo "print"
-echo "print"
+Debug whoami
+cd /root
+pwd
+ls
+cd /home/sles
+pwd
+ls
+export PWD="/home/sles"
+pwd
+ls
 }
 
 ## SCP_RUN Framework Begins  ##
@@ -494,6 +525,7 @@ echo "print"
 
 ## Deployment tool preparation functions
 #AirgappedTarBallDeployment_on_Management
+## Run the function below when ssh access with key is not implemented.
 #TempSshAccessForDeployment_on_All
 #DeployRepositories_on_Management
 #RegisterRepositories_on_SES
@@ -545,8 +577,9 @@ echo "print"
 #Stage5_on_Management
 
 ## Etc
-#Test_on_All
+Test_on_All
 #Test_on_Management
+#CreateUserWithKeyAccess_on_All
 
 ######################
 ## USER jobs Ends   ##
@@ -566,11 +599,11 @@ EOT
 # It looks for targets on which the script will run using function names
 # espacially, SCP_RUN_Target name will be reside at the end of function name after '_'. e.g. this_is_function_Management
 # Regarding SCP_RUN_Target and hoatname array mapping, two parts with "## mapping" below need to be configured.
-rm -f /tmp/${SCRIPT_NAME}_HosSe.t;touch /tmp/${SCRIPT_NAME}_HosSe.t;
-rm -f /tmp/${SCRIPT_NAME}_function.t; touch /tmp/${SCRIPT_NAME}_function.t;
-# Find deployment script in the current directory. If it is not in current directory, find the script in ${MY_TOOL_INSTALLED_DIR}
-if [[ -e ${PWD}/${SCRIPT_NAME} ]]; then SCRIPT_NAME_FOUND="${PWD}/${SCRIPT_NAME}";else SCRIPT_NAME_FOUND="${MY_TOOL_INSTALLED_DIR}/${SCRIPT_NAME}";fi;
-awk -F_ -v VHOS="/tmp/${SCRIPT_NAME}_HosSe.t" -v VFUN="/tmp/${SCRIPT_NAME}_function.t;"  $'
+rm -f /tmp/${freSCRIPT_NAME}_HosSe.t;touch /tmp/${freSCRIPT_NAME}_HosSe.t;
+rm -f /tmp/${freSCRIPT_NAME}_function.t; touch /tmp/${freSCRIPT_NAME}_function.t;
+# Find deployment script in the current directory. If it is not in current directory, find the script in ${fre_MY_TOOL_INSTALLED_DIR}
+if [[ -e ${PWD}/${freSCRIPT_NAME} ]]; then freSCRIPT_NAME_FOUND="${PWD}/${freSCRIPT_NAME}";else freSCRIPT_NAME_FOUND="${fre_MY_TOOL_INSTALLED_DIR}/${freSCRIPT_NAME}";fi;
+awk -F_ -v VHOS="/tmp/${freSCRIPT_NAME}_HosSe.t" -v VFUN="/tmp/${freSCRIPT_NAME}_function.t;"  $'
 	BEGIN{VEXE=0};{
 	if($1=="## Here to run") {VEXE=1;};
 	## mapping
@@ -580,10 +613,10 @@ awk -F_ -v VHOS="/tmp/${SCRIPT_NAME}_HosSe.t" -v VFUN="/tmp/${SCRIPT_NAME}_funct
 	};
 	if($1=="## Here done") {VEXE=0;}
 	};
-' ${SCRIPT_NAME_FOUND}  | bash
-SCP_RUN_Target_Num=$(awk '!a[$0]++' /tmp/${SCRIPT_NAME}_HosSe.t | wc -l) 
-SCP_RUN_TARGET=$(awk '!a[$0]++' /tmp/${SCRIPT_NAME}_HosSe.t) 
-SCP_RUN_FUNCTIONS=$(cat /tmp/${SCRIPT_NAME}_function.t)
+' ${freSCRIPT_NAME_FOUND}  | bash
+SCP_RUN_Target_Num=$(awk '!a[$0]++' /tmp/${freSCRIPT_NAME}_HosSe.t | wc -l) 
+SCP_RUN_TARGET=$(awk '!a[$0]++' /tmp/${freSCRIPT_NAME}_HosSe.t) 
+SCP_RUN_FUNCTIONS=$(cat /tmp/${freSCRIPT_NAME}_function.t)
 NUM=$SCP_RUN_Target_Num
 
 # Set up SCP_RUN_TARGET with the enabled SCP_RUN_TARGET above
@@ -597,8 +630,8 @@ else
 	if [[ $SCP_RUN_TARGET == "SES" ]]; then HOSTS_PRE=("${SES_IP_TOTAL[@]}");   fi; 
 	if [[ $SCP_RUN_TARGET == "Temp" ]]; then HOSTS_PRE=("${HOSTS_TEMP[@]}");     fi; 
 fi;
-rm -f /tmp/${SCRIPT_NAME}_HosSe.t;
-rm -f /tmp/${SCRIPT_NAME}_function.t;
+rm -f /tmp/${freSCRIPT_NAME}_HosSe.t;
+rm -f /tmp/${freSCRIPT_NAME}_function.t;
 
 #Remove duplication in HOSTS_PRE array
 HOSTS=();
@@ -624,14 +657,14 @@ for i in "${HOSTS[@]}";
 do
 
         echo;echo "================CMD_Started on $i==================";
-        scp -o StrictHostKeyChecking=no  /tmp/$Files $i:$SCP_RUN_Target_dir;
-	ssh -o StrictHostKeyChecking=no $i bash ${SCP_RUN_Target_dir}/${Files}
-	ssh -o StrictHostKeyChecking=no $i rm -f ${SCP_RUN_Target_dir}/${Files}
+        scp -o StrictHostKeyChecking=no  /tmp/$freGENERATED_SCRIPT $freUSER@$i:$freSCP_RUN_Target_dir/${freGENERATED_SCRIPT}_copy;
+	ssh -o StrictHostKeyChecking=no $freUSER@$i sudo su - root -c "\"bash ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy\""
+	ssh -o StrictHostKeyChecking=no $freUSER@$i sudo su - root -c "\"rm -f ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy\""
 	echo "================CMD_Done==================";
         echo;
 
 done;
 
-rm -f /tmp/$Files;
+rm -f /tmp/$freGENERATED_SCRIPT;
 echo "================ALL_Done==================";
 ## SCP_RUN Framework Ends    ##
