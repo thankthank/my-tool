@@ -17,14 +17,18 @@
 ## IP addresses which are configured on target nodes. 
 MGMT_IP="192.168.37.71"
 MASTER_IP=(192.168.37.36 192.168.37.37 192.168.37.38)
-WORKER_IP=(192.168.37.39 192.168.37.40 192.168.37.41 192.168.37.39 192.168.37.39 192.168.37.39 192.168.37.39)
+WORKER_IP=(192.168.37.39 192.168.37.40 192.168.37.41)
+## IP address for monitoring. Just pick one of worker ip and put four times as below.
+MONITORING_IP=(192.168.37.39 192.168.37.39 192.168.37.39 192.168.37.39)
 
 ## Network configuration variables. Hostnames you want to configure on target nodes. Even if you already configured hostname, put the configured hostnames here and skip the hostname configuration function.
 MGMT="caasp-lb"
 DOMAIN="suse.su" # DOMAIN name for this lab. 
 MGMT_FQDN="$MGMT.$DOMAIN" #This is also FQDN of registry
 MASTER=(caasp-master1 caasp-master2 caasp-master3)
-WORKER=(caasp-worker1 caasp-worker2 caasp-worker3 monitoring prometheus prometheus-alertmanager grafana)
+WORKER=(caasp-worker1 caasp-worker2 caasp-worker3)
+## hostnames which will be used monitoring stack. This is static hostnames so you don't have to change the value below.
+MONITORING=(monitoring prometheus prometheus-alertmanager grafana)
 
 ## Functionis Configuration variables : Variables which are used by functions
 DNS_SERVER="168.126.63.1"
@@ -32,7 +36,8 @@ GATEWAY="192.168.37.254"
 NTP_CLIENT_NET="192.168.0.0/16"
 LB_IP="192.168.37.72"
 SWAP_DEV="sda2" #If you have SWAP partition with this device, it will be removed. If you don't have SWAP partition ignore it.
-# Storage class and pvc with ceph rbd
+## Storage class and pvc with ceph rbd
+## The exsiting ceph cluster information.
 STORAGECLASS="ceph-rbd"
 CEPH_PORT="6789"
 CEPH_ADMIN_IP="192.168.37.75"
@@ -69,10 +74,12 @@ HOSTNAME_TOTAL=()
 HOSTNAME_TOTAL[0]=$MGMT
 j=${#HOSTNAME_TOTAL[@]};for i in "${MASTER[@]}";do HOSTNAME_TOTAL[$j]=$i; ((j=j+1));done;
 j=${#HOSTNAME_TOTAL[@]};for i in "${WORKER[@]}";do HOSTNAME_TOTAL[$j]=$i; ((j=j+1));done;
+j=${#HOSTNAME_TOTAL[@]};for i in "${MONITORING[@]}";do HOSTNAME_TOTAL[$j]=$i; ((j=j+1));done;
 IP_TOTAL=()
 IP_TOTAL[0]=$MGMT_IP
 j=${#IP_TOTAL[@]};for i in "${MASTER_IP[@]}";do IP_TOTAL[$j]=$i; ((j=j+1));done;
 j=${#IP_TOTAL[@]};for i in "${WORKER_IP[@]}";do IP_TOTAL[$j]=$i; ((j=j+1));done;
+j=${#IP_TOTAL[@]};for i in "${MONITORING_IP[@]}";do IP_TOTAL[$j]=$i; ((j=j+1));done;
 CAASP_TOTAL=()
 j=${#CAASP_TOTAL[@]};for i in "${MASTER[@]}";do CAASP_TOTAL[$j]=$i; ((j=j+1));done;
 j=${#CAASP_TOTAL[@]};for i in "${WORKER[@]}";do CAASP_TOTAL[$j]=$i; ((j=j+1));done;
@@ -347,36 +354,45 @@ Helm_Deployment_on_Management () {
 Debug kubectl create serviceaccount --namespace kube-system tiller
 Debug kubectl create clusterrolebinding tiller --clusterrole=cluster-admin --serviceaccount=kube-system:tiller
 
-Debug helm init --service-account tiller --tiller-image $MGMT_FQDN/kubernetes-helm/tiller:2.14.2
+#Debug helm init --service-account tiller --tiller-image $MGMT_FQDN/caasp/v4/helm-tiller:2.16.1
+Debug helm init --upgrade --service-account tiller --tiller-image $MGMT_FQDN/caasp/v4/helm-tiller:2.16.1
 #Add SUSE chart Repo
 #Debug helm repo add suse-charts https://kubernetes-charts.suse.com
 #Debug helm repo add stable https://kubernetes-charts.storage.googleapis.com
 }
 
 Kubernetes_UI_on_Management () {
-# Install heapster
-Debug helm install --name heapster-default --namespace=kube-system localcharts/heapster --version=0.2.7 --set rbac.create=true
-Wait 30
-# Deploy kubernetes dashboard
-Debug helm install --namespace=kube-system --name=kubernetes-dashboard localcharts/kubernetes-dashboard --version=0.6.1
-Wait 30
-# Dashboard access
-Debug kubectl -n kube-system apply -f $froLOCAL_REPO_DIR/my-tool/k8s/kubernetes-dashboard-access.yml
+## Deploy kubernetes dashboard
+#Debug helm install --namespace=kube-system --name=kubernetes-dashboard localcharts/kubernetes-dashboard --version=0.6.1
 
-# Dashboard token 
-Secret=\$(kubectl -n kube-system get secret | grep dashboard-token | awk '{print \$1}')
-kubectl -n kube-system describe secret \$Secret | grep ^token | awk '{ print \$2 }' > ~/dashboard.token
+Debug kubectl apply -f $froLOCAL_REPO_DIR/k8s_conf/dashboard.yaml
+## Dashboard token 
+Secret=\$(kubectl -n kubernetes-dashboard get secret | grep dashboard-token | awk '{print \$1}')
+kubectl -n kubernetes-dashboard describe secret \$Secret | grep ^token | awk '{ print \$2 }' > ~/dashboard.token
 
-echo 'Created a tocken as ~/dashboard.token'
+echo;
+echo "------- K8S Dashboard Information --------"
+for i in ${WORKER_IP[@]};do
+echo "Access URL : https://\$i:30001"
+done
+echo 'Login with the created token as ~/dashboard.token'
+echo "Please use firefox as Web Browser not Chrome. Chrome will not allow access"
+echo "------------------------------------------";echo;
 
 }
 
-Dashboard_proxy_on_Management () {
+AccessProxy_on_Management () {
 zypper --non-interactive in screen; 
 Debug screen -dm kubectl proxy --address 0.0.0.0 --accept-hosts '.*'
 
-# Dashboard access using Web Browser and dashboard-token
-# http://<management Ip address>:8001/api/v1/namespaces/kube-system/services/https:kubernetes-dashboard:/proxy/#!/login
+## How to access service using the proxy
+# http://<Proxy IP address>/api/v1/namespaces/<namespace_name>/services/<[https:]service_name[:port_name]>/proxy
+# e.g.
+# http://192.168.37.71:8001/api/v1/namespaces/monitoring/services/http:mynginx-service:80/proxy
+# caasp-lb:~ # kubectl -n monitoring get service | grep mynginx
+# mynginx-service                 ClusterIP   10.96.192.39     <none>        80/TCP          76m
+
+
 }
 
 Create_Certificate_on_Management() {
@@ -488,95 +504,53 @@ mkdir certs crl newcerts certificate crlnumber private requests
 chmod 700 private
 
 # Copy CA key and cert
-cp $froLOCAL_REPO_DIR/cert/natgw_cert/cacert.pem ~/cmd_cert/\$CADIR/cacert.pem
-cp $froLOCAL_REPO_DIR/cert/natgw_cert/cakey.pem ~/cmd_cert/\$CADIR/private/cakey.pem
+Debug cp $froLOCAL_REPO_DIR/cert/natgw_cert/cacert.pem ~/cmd_cert/\$CADIR/cacert.pem
+Debug cp $froLOCAL_REPO_DIR/cert/natgw_cert/cakey.pem ~/cmd_cert/\$CADIR/private/cakey.pem
 
 ## create configuration file
 ##/etc/ssl/openssl.cnf is the default
 cat << EOF > ~/cmd_cert/reg.cnf
-HOME                    = .
-RANDFILE                = \$ENV::HOME/.rnd
-[ ca ]
-default_ca      = CA_default            # The default ca section
-
-[ CA_default ]
-dir             = ./demoCA              # Where everything is kept
-certs           = ./demoCA/certs            # Where the issued certs are kept
-crl_dir         = ./demoCA/crl              # Where the issued crl are kept
-database        = ./demoCA/index.txt        # database index file.
-new_certs_dir   = ./demoCA/newcerts         # default place for new certs.
-certificate     = ./demoCA/cacert.pem       # The CA certificate
-serial          = ./demoCA/serial           # The current serial number
-crlnumber       = ./demoCA/crlnumber        # the current crl number
-crl             = ./demoCA/crl.pem          # The current CRL
-private_key     = ./demoCA/private/cakey.pem# The private key
-RANDFILE        = ./demoCA/private/.rand    # private random number file
-x509_extensions = usr_cert              # The extensions to add to the cert
-name_opt        = ca_default            # Subject Name options
-cert_opt        = ca_default            # Certificate field options
-
-default_days    = 3650                   # how long to certify for
-default_crl_days= 30                    # how long before next CRL
-default_md      = default               # use public key default MD
-preserve        = no                    # keep passed DN ordering
-policy          = policy_anything
-
-[ usr_cert ]
-nsComment                       = "OpenSSL Generated Certificate"
-subjectKeyIdentifier=hash
-authorityKeyIdentifier=keyid,issuer
-
-[ policy_anything ]
-countryName             = optional
-stateOrProvinceName     = optional
-localityName            = optional
-organizationName        = optional
-organizationalUnitName  = optional
-commonName              = supplied
-emailAddress            = optional
-
-[ req ]
-default_bits       = 2048
-default_md         = sha512
-default_keyfile    = key.pem
-prompt             = no
-encrypt_key        = no
+[req]
 distinguished_name = req_distinguished_name
-req_extensions     = v3_req
+req_extensions = v3_req
+prompt = no
 
-[ req_distinguished_name ]
-countryName            = "KR"                     # C=
-stateOrProvinceName    = "Seoul"                 # ST=
-localityName           = "Seoul"                 # L=
-postalCode             = "11111"                 # L/postalcode=
-streetAddress          = "Samsumg-ro"            # L/street=
-organizationName       = "SUSE"        # O=
-organizationalUnitName = "SE"          # OU=
-commonName             = $DOMAIN            # CN=
-emailAddress           = "chris.chon@suse.com"  # CN/emailAddress=
+[req_distinguished_name]
+C = KR
+ST = KR
+L = Seoul
+O = suse
+OU = su
+CN = grafana.$DOMAIN
+emailAddress = chris.chon@suse.com
 
-[ v3_req ]
-keyUsage = keyEncipherment, dataEncipherment
+[v3_req]
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
 extendedKeyUsage = serverAuth
-subjectAltName  = @alt_names 
+subjectAltName = @alt_names
 
 [alt_names]
-DNS.1 = prometheus.$DOMAIN
-DNS.2 = prometheus-alertmanager.$DOMAIN
-DNS.3 = grafana.$DOMAIN 
+DNS.1 = prometheus-alertmanager.$DOMAIN
+DNS.2 = prometheus.$DOMAIN
+DNS.4 = grafana.$DOMAIN
+
 
 EOF
 
 # Create private key and public key(request to be signed by CA)
 cd ~/cmd_cert
-openssl req -config reg.cnf -new -keyout \$CADIR/private/monitoring_key.pem -out \$CADIR/requests/monitoring_req.pem -newkey rsa:2048 -extensions 'v3_req'
+#Debug openssl req -config reg.cnf -new -sha256 -key \$CADIR/private/monitoring_key.pem -out \$CADIR/requests/monitoring_req.pem 
+Debug openssl genrsa -out \$CADIR/private/monitoring_key.pem 2048
+Debug openssl req -key \$CADIR/private/monitoring_key.pem -new -sha256 -out \$CADIR/requests/monitoring_req.pem -config reg.cnf
+#Debug openssl req -config reg.cnf -new -keyout \$CADIR/private/server_key.pem -out \$CADIR/requests/server_req.pem -newkey rsa:2048
 
 touch \$CADIR/index.txt
 echo 01 > \$CADIR/serial
 
 # Create server certificate
-openssl ca -config reg.cnf -policy policy_anything -days 3650 -out \$CADIR/certs/monitoring_crt.pem -infiles \$CADIR/requests/monitoring_req.pem
-
+#openssl ca -config reg.cnf -policy policy_anything -days 3650 -out \$CADIR/certs/monitoring_crt.pem -infiles \$CADIR/requests/monitoring_req.pem
+Debug openssl x509 -req -CA ./demoCA/cacert.pem -CAkey ./demoCA/private/cakey.pem -CAcreateserial -in demoCA/requests/monitoring_req.pem  -out demoCA/certs/monitoring_crt.pem -days 365 -extensions v3_req -extfile reg.cnf
 
 }
 
@@ -689,20 +663,21 @@ HelmLocalChartRepoDeployment_on_Management() {
 
 local LOCALCHARTS="localcharts"
 
-Debug zypper --non-interactive in helm
+zypper --non-interactive in helm
 
 cd $froLOCAL_REPO_DIR/helm_local_repo;
-Debug echo "pwd : \$PWD"
-for i in \$(ls $froLOCAL_REPO_DIR/helm_local_repo | egrep 'tgz\$');do
-	tar xvfz \$i -C $froLOCAL_REPO_DIR/helm_local_repo --overwrite
-	CHART=\${i%-*}
-	sed -i 's/www.changeme.com/$MGMT_FQDN/g' $froLOCAL_REPO_DIR/helm_local_repo/\$CHART/values.yaml
-	tar cvfz \$i \$CHART --overwrite
-	rm -rf $froLOCAL_REPO_DIR/helm_local_repo/\$CHART
-done
+echo "pwd : \$PWD"
+## Don't have to change registry information because crio container registry proxy.
+#for i in \$(ls $froLOCAL_REPO_DIR/helm_local_repo | egrep 'tgz\$');do
+#	tar xvfz \$i -C $froLOCAL_REPO_DIR/helm_local_repo --overwrite
+#	CHART=\${i%-*}
+#	sed -i 's/www.changeme.com/$MGMT_FQDN/g' $froLOCAL_REPO_DIR/helm_local_repo/\$CHART/values.yaml
+#	tar cvfz \$i \$CHART --overwrite
+#	rm -rf $froLOCAL_REPO_DIR/helm_local_repo/\$CHART
+#done
 
 # helm init --client-only
-Debug helm init --client-only
+helm init --client-only
 
 cat << EOF > /root/.helm/repository/repositories.yaml
 apiVersion: v1
@@ -711,22 +686,22 @@ repositories:
 EOF
 
 # helm repo index creation
-Debug helm repo index $froLOCAL_REPO_DIR/helm_local_repo --url http://$MGMT_FQDN:9001;
+helm repo index $froLOCAL_REPO_DIR/helm_local_repo --url http://$MGMT_FQDN:9001;
 
 # Create web server for helm chart repo and register this in repo list
 # Add localcharts if localcharts doesn't exists
 Debug_print $'RESULT=\$(helm repo list | awk -v V1=\^\$LOCALCHARTS\' \'{if(\$1~V1) print \$1 }\')'
 RESULT=\$(helm repo list | awk -v V1="^\$LOCALCHARTS" '{if(\$1~V1) print \$1 }')
-Debug echo \$RESULT
+echo \$RESULT
 
 if [[ ! \$RESULT =~ \$LOCALCHARTS ]]; then
-	Debug screen -dm helm serve --repo-path $froLOCAL_REPO_DIR/helm_local_repo --address $MGMT_FQDN:9001
+	screen -dm helm serve --repo-path $froLOCAL_REPO_DIR/helm_local_repo --address $MGMT_FQDN:9001
 	echo "sleep 10 sec until webserver up..."
 	for i in {10..1};do sleep 1; echo -n \$i..;done;echo;
-	Debug helm repo add \$LOCALCHARTS http://$MGMT_FQDN:9001
+	helm repo add \$LOCALCHARTS http://$MGMT_FQDN:9001
 else 
 	echo "localcharts already exists. Start helm serve, if there is no 9001 listening port";
-	Debug_print $'ss -pltne | grep \':9001\' || screen -dm helm serve --repo-path $froLOCAL_REPO_DIR/helm_local_repo --address $MGMT_FQDN:9001'
+	#Debug_print $'ss -pltne | grep \':9001\' || screen -dm helm serve --repo-path $froLOCAL_REPO_DIR/helm_local_repo --address $MGMT_FQDN:9001'
 	ss -pltne | grep ':9001' || screen -dm helm serve --repo-path $froLOCAL_REPO_DIR/helm_local_repo --address $MGMT_FQDN:9001
 fi
 
@@ -748,7 +723,17 @@ Debug scp -o StrictHostKeyChecking=no -r $CEPH_ADMIN_IP:/etc/ceph/ceph* $froLOCA
 Debug cm-scp $froLOCAL_REPO_DIR/ceph_conf/ceph* /etc/ceph/;
 
 CEPH_SECRET=\$(ceph auth get-key client.admin)
-Debug_print kubectl apply for ceph-secret-admin
+Debug_print kubectl -n kube-system apply for ceph-secret-admin
+kubectl -n kube-system apply -f - << EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ceph-secret-admin
+type: "kubernetes.io/rbd"
+data:
+  key: "\$(echo \$CEPH_SECRET | base64)"
+EOF
+Debug_print kubectl -n monitoring apply for ceph-secret-admin
 kubectl -n monitoring apply -f - << EOF
 apiVersion: v1
 kind: Secret
@@ -771,11 +756,24 @@ EOF
 
 local CEPH_POOL="caasp-demo"
 local CEPH_USER="caaspuserdemo"
-Debug ceph osd pool create \$CEPH_POOL 128 128
-Debug ceph auth get-or-create client.\$CEPH_USER mon "allow r" osd "allow class-read object_prefix rbd_children, allow rwx pool=\$CEPH_POOL" -o ceph.client.user.keyring
+ceph osd pool create \$CEPH_POOL 128 128
+## Replication size to 1. No redundancy. Not recommened for production.
+ceph osd pool set \$CEPH_POOL min_size 1
+ceph osd pool set \$CEPH_USER size 1
+ceph auth get-or-create client.\$CEPH_USER mon "allow r" osd "allow class-read object_prefix rbd_children, allow rwx pool=\$CEPH_POOL" -o ceph.client.user.keyring
 
 local USER_SECRET=\$(ceph auth get-key client.\$CEPH_USER)
-Debug_print kubectl apply for ceph-secret-user
+Debug_print kubectl -n kube-system apply for ceph-secret-user
+kubectl -n kube-system apply -f - << EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ceph-secret-user
+type: "kubernetes.io/rbd"
+data:
+  key: "\$(echo \$USER_SECRET | base64)"
+EOF
+Debug_print kubectl -n monitoring apply for ceph-secret-user
 kubectl -n monitoring apply -f - << EOF
 apiVersion: v1
 kind: Secret
@@ -798,7 +796,7 @@ EOF
 
 
 # SotrageClass will be shared across all namespace
-Debug_print kubectl apply for ceph-rbd storageclass
+Debug_print kubectl apply for $STORAGECLASS storageclass
 kubectl apply -f - << EOF
 apiVersion: storage.k8s.io/v1beta1
 kind: StorageClass
@@ -852,6 +850,13 @@ EOF
 #      claimName: cephtest-pvc
 #
 #EOF
+
+}
+
+
+StratosDeployment_on_Management () {
+
+Debug helm install localcharts/console --name stratos-console --namespace monitoring --values $froLOCAL_REPO_DIR/helm_conf/stratos-values.yaml
 
 }
 
@@ -942,7 +947,7 @@ NginxIngressControllerDeployment_on_Management () {
 cat << EOF > /tmp/nginx-ingress-config-values.yaml
 # Enable the creation of pod security policy
 podSecurityPolicy:
-  enabled: true
+  enabled: false
 
 # Create a specific service account
 serviceAccount:
@@ -954,14 +959,16 @@ serviceAccount:
 controller:
   service:
     enableHttp: false
+   # enableHttp: true
     type: NodePort
     nodePorts:
       https: 30443
 
 EOF
 
-Debug kubectl create namespace monitoring
-Debug helm install --name nginx-ingress localcharts/nginx-ingress --namespace monitoring --values /tmp/nginx-ingress-config-values.yaml
+Debug kubectl create namespace nginx-ingress
+Debug helm install --name nginx-ingress localcharts/nginx-ingress --namespace nginx-ingress --values /tmp/nginx-ingress-config-values.yaml
+#Debug helm upgrade nginx-ingress localcharts/nginx-ingress --namespace nginx-ingress --values /tmp/nginx-ingress-config-values.yaml
 
 }
 
@@ -983,6 +990,12 @@ Debug htpasswd -c \$MON_CONFIG_DIR/auth admin
 
 Debug kubectl create secret generic -n monitoring prometheus-basic-auth --from-file=\$MON_CONFIG_DIR/auth
 
+## Create secret for ETCD monitoring
+mkdir -p \$MON_CONFIG_DIR/etcd;
+Debug scp ${MASTER_IP[0]}:/etc/kubernetes/pki/etcd/* \$MON_CONFIG_DIR/etcd/;
+
+Debug kubectl -n monitoring create secret generic etcd-certs --from-file=\$MON_CONFIG_DIR/etcd/ca.crt --from-file=\$MON_CONFIG_DIR/etcd/healthcheck-client.crt --from-file=\$MON_CONFIG_DIR/etcd/healthcheck-client.key
+
 cat << EOF > \$MON_CONFIG_DIR/prometheus-config-values.yaml
 # Alertmanager configuration
 alertmanager:
@@ -996,6 +1009,7 @@ alertmanager:
       nginx.ingress.kubernetes.io/auth-type: basic
       nginx.ingress.kubernetes.io/auth-secret: prometheus-basic-auth
       nginx.ingress.kubernetes.io/auth-realm: "Authentication Required"
+     # nginx.ingress.kubernetes.io/server-alias: prometheus-alertmanager.$DOMAIN
     tls:
       - hosts:
         - prometheus-alertmanager.$DOMAIN
@@ -1007,7 +1021,7 @@ alertmanager:
     ## Create a PersistentVolumeClaim of 2Gi
     size: 2Gi
     ## Use an existing PersistentVolumeClaim (my-pvc)
-    #existingClaim: alertmanager-pvc
+    #existingClaim: my-pvc
 
 ## Alertmanager is configured through alertmanager.yml. This file and any others
 ## listed in alertmanagerFiles will be mounted into the alertmanager pod.
@@ -1036,10 +1050,6 @@ nodeExporter:
       operator: Exists
       effect: NoSchedule
 
-# Podsecurity for new chart
-podSecurityPolicy:
-  enabled: true
-
 # Disable Pushgateway
 pushgateway:
   enabled: false
@@ -1055,6 +1065,8 @@ server:
       nginx.ingress.kubernetes.io/auth-type: basic
       nginx.ingress.kubernetes.io/auth-secret: prometheus-basic-auth
       nginx.ingress.kubernetes.io/auth-realm: "Authentication Required"
+     # nginx.ingress.kubernetes.io/server-alias: prometheus-server.$DOMAIN
+     # nginx.ingress.kubernetes.io/auth-realm: prom.$DOMAIN
     tls:
       - hosts:
         - prometheus.$DOMAIN
@@ -1066,15 +1078,14 @@ server:
     ## Create a PersistentVolumeClaim of 8Gi
     size: 8Gi
     ## Use an existing PersistentVolumeClaim (my-pvc)
-    #existingClaim: prometheus-pvc
+    #existingClaim: my-pvc
   ## Additional Prometheus server Secret mounts
   # Defines additional mounts with secrets. Secrets must be manually created in the namespace.
-  ##Remove this when adding#extraSecretMounts:
-  ##Remove this when adding#- name: etcd-certs
-    ##Remove this when adding#mountPath: /etc/secrets
-    ##Remove this when adding#secretName: etcd-certs
-    ##Remove this when adding#readOnly: true
-
+  extraSecretMounts:
+  - name: etcd-certs
+    mountPath: /etc/secrets
+    secretName: etcd-certs
+    readOnly: true
 
 ## Prometheus is configured through prometheus.yml. This file and any others
 ## listed in serverFiles will be mounted into the server pod.
@@ -1083,15 +1094,16 @@ server:
 #serverFiles:
 #  prometheus.yml:
 
+## The Alertmanager configuration
 alertmanagerFiles:
   alertmanager.yml:
     global:
       # The smarthost and SMTP sender used for mail notifications.
-      smtp_from: caasp@suse.su
-      smtp_smarthost: caasp-lb.suse.su:25
-     # smtp_auth_username: admin@example.com
-     # smtp_auth_password: <password>
-      smtp_require_tls: false
+      smtp_from: alertmanager@$DOMAIN
+      smtp_smarthost: smtp.$DOMAIN:587
+      smtp_auth_username: admin@$DOMAIN
+      smtp_auth_password: <PASSWORD>
+      smtp_require_tls: true
 
     route:
       # The labels by which incoming alerts are grouped together.
@@ -1118,8 +1130,7 @@ alertmanagerFiles:
     receivers:
     - name: 'admin-example'
       email_configs:
-      - to: 'chris.chon@suse.com'
-
+      - to: 'admin@$DOMAIN'
 serverFiles:
   alerts: {}
   rules:
@@ -1132,31 +1143,29 @@ serverFiles:
         labels:
           severity: critical
         annotations:
-          description: '{{ $labels.node }} is not ready'
+          description: '{{ \$labels.node }} is not ready'
       - alert: NodeIsOutOfDisk
         expr: kube_node_status_condition{condition="OutOfDisk",status="true"} == 1
         labels:
           severity: critical
         annotations:
-          description: '{{ $labels.node }} has insufficient free disk space'
+          description: '{{ \$labels.node }} has insufficient free disk space'
       - alert: NodeHasDiskPressure
         expr: kube_node_status_condition{condition="DiskPressure",status="true"} == 1
         labels:
           severity: warning
         annotations:
-          description: '{{ $labels.node }} has insufficient available disk space'
+          description: '{{ \$labels.node }} has insufficient available disk space'
       - alert: NodeHasInsufficientMemory
         expr: kube_node_status_condition{condition="MemoryPressure",status="true"} == 1
         labels:
           severity: warning
         annotations:
-          description: '{{ $labels.node }} has insufficient available memory'
+          description: '{{ \$labels.node }} has insufficient available memory'
 
 EOF
-Wait 1;
 
 Debug helm install --name prometheus localcharts/prometheus --namespace monitoring --values \$MON_CONFIG_DIR/prometheus-config-values.yaml
-Wait 60;
 
 ## Grafana deployment
 cat << EOF > \$MON_CONFIG_DIR/grafana-datasources.yaml
@@ -1187,13 +1196,14 @@ Debug kubectl -n monitoring create -f \$MON_CONFIG_DIR/grafana-datasources.yaml
 
 cat << EOF > \$MON_CONFIG_DIR/grafana-config-values.yaml
 # Configure admin password
-adminPassword: P@ssw0rd
+adminPassword: changeme
 
 # Ingress configuration
 ingress:
   enabled: true
   annotations:
-    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/rewrite-target: /
+#    kubernetes.io/ingress.class: nginx
   hosts:
     - grafana.$DOMAIN
   tls:
@@ -1223,10 +1233,8 @@ sidecar:
     label: grafana_dashboard
 
 EOF
-Wait 1;
 
 Debug helm install --name grafana localcharts/grafana --namespace monitoring --values \$MON_CONFIG_DIR/grafana-config-values.yaml
-Wait 60;
 
 ## grafana dashboard configmap copied from https://github.com/SUSE/caasp-monitoring
 Debug cp $froLOCAL_REPO_DIR/my-tool/k8s/grafana/*.yaml \$MON_CONFIG_DIR/
@@ -1246,17 +1254,6 @@ echo 'Grafana : https://grafana.$DOMAIN:30443'
 
 MonitoringETCDCluster_on_Management() {
 
-local MON_CONFIG_DIR="/etc/caasp_monitoring"
-
-mkdir -p \$MON_CONFIG_DIR/etcd;
-Debug scp caasp-master1:/etc/kubernetes/pki/etcd/* \$MON_CONFIG_DIR/etcd/;
-
-Debug kubectl -n monitoring create secret generic etcd-certs --from-file=\$MON_CONFIG_DIR/etcd/ca.crt --from-file=\$MON_CONFIG_DIR/etcd/healthcheck-client.crt --from-file=\$MON_CONFIG_DIR/etcd/healthcheck-client.key
-
-Debug sed -i 's+##Remove this when adding#++g' \$MON_CONFIG_DIR/prometheus-config-values.yaml
-
-Debug helm upgrade prometheus localcharts/prometheus --namespace monitoring --values \$MON_CONFIG_DIR/prometheus-config-values.yaml
-Wait 60
 
 echo "Check the private IP address"
 Debug kubectl get pods -n kube-system -l component=etcd -o wide
@@ -1367,7 +1364,7 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: caasp-lb.suse.su/nginx:latest
+        image: $MGMT.$DOMAIN/nginx:latest
         ports:
         - containerPort: 80
 ---
@@ -1421,9 +1418,23 @@ cat << EOF > /etc/containers/registries.conf
 prefix = "registry.suse.com"
 location = "$MGMT_FQDN"
 [[registry]]
+prefix = "docker.io"
+location = "$MGMT_FQDN"
+[[registry]]
+prefix = "docker.io/library"
+location = "$MGMT_FQDN"
+[[registry]]
+prefix = "quay.io"
+location = "$MGMT_FQDN"
+[[registry]]
+prefix = "k8s.gcr.io"
+location = "$MGMT_FQDN"
+[[registry]]
 prefix = "registry.opensuse.org/kubic"
-location = "caasp-lb.suse.su/caasp/v4"
+location = "$MGMT_FQDN/caasp/v4"
 EOF
+
+systemctl restart crio.service
 
 }
 
@@ -1522,22 +1533,30 @@ Debug echo "test"
 
 #Helm_Deployment_on_Management
 
-## Monitoring Deployment. First, configure /etc/hosts configuration using EtcHosts_on_All function
-## Just pick any worker node IP for monitoring.
+## Storageclass creation and secret creation in monitoring, kube-system and default namespace
+##########################
+## Manual task below
+## 1. Configure root ssh access with key to Ceph Admin node.
+## 2. And then run the function below.
 #StorageclassPVCwithCephRBD_on_Management
-#SMTPsender_on_Management
+
+## Dashboard
+#Kubernetes_UI_on_Management
+
+## Stratos Deployment
+## Storage class and ingress controller are needed
+#StratosDeployment_on_Management
+
+## Monitoring Deployment. 
 #NginxIngressControllerDeployment_on_Management
+#SMTPsender_on_Management
 #Create_MonitorCertificate_on_Management
 #MonitoringStackDeployment_on_Management
 #MonitoringETCDCluster_on_Management
 
-## Dashboard
-#Kubernetes_UI_on_Management
-#Dashboard_proxy_on_Management
-
 ## Centralized Logging
 #RsyslogserverDeployment_on_Management
-#CentralizedLoggingAgent_on_Management
+CentralizedLoggingAgent_on_Management
 
 ## Update nodes
 ## 0. OS manual update configuration
@@ -1552,6 +1571,8 @@ Debug echo "test"
 ## ETC
 #start_ManagementComponentsAfterReboot_on_Management
 #Test_on_CaaSP
+#AccessProxy_on_Management
+
 
 
 ######################
