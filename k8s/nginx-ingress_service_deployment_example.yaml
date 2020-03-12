@@ -1,0 +1,51 @@
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: mynginx-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /mynginx
+        backend:
+          serviceName: mynginx-service
+          servicePort: 80
+
+---
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    app: mynginx
+  name: mynginx-service
+  namespace: monitoring
+spec:
+  ports:
+    - port: 80
+      targetPort: 80
+  selector:
+    app: mynginx
+  type: ClusterIP
+---
+
+apiVersion: apps/v1 # for versions before 1.9.0 use apps/v1beta2
+kind: Deployment
+metadata:
+  name: mynginx-deployment
+spec:
+  selector:
+    matchLabels:
+      app: mynginx
+  replicas: 1 # tells deployment to run 2 pods matching the template
+  template:
+    metadata:
+      labels:
+        app: mynginx
+    spec:
+      containers:
+      - name: nginx
+        image: caasp-lb.suse.su/nginx:latest
+        ports:
+        - containerPort: 80
