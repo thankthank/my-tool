@@ -276,22 +276,24 @@ sync;
 }
 
 
+
 NetworkInterfaceAndHostname_on_All () {
 
 # Configure hostname
 IP_HERE=\$(ip addr show dev eth0 | grep global | head -1 | awk -F/ '{print \$1}' | awk '{print \$2}')
 
-(( j=0 ))
-for i in \${IP_TOTAL[@]};
+## The first hostname set
+j=\${#IP_TOTAL[@]}
+for ((i=j; i >= 0 ; i--  ))
 do
-	#echo i : \$i;echo IP_HERE : \$IP_HERE;
-	if [[ \$IP_HERE == \$i  ]];then
-	#Debug_print $'echo \${HOSTNAME_TOTAL[\$j]} > /etc/hostname'
-	echo \${HOSTNAME_TOTAL[\$j]} > /etc/hostname
-	hostname \${HOSTNAME_TOTAL[\$j]}
-	fi;
-	((j=j+1))	
+        #echo IP_TOTAL[] : \${IP_TOTAL[\$i]};echo IP_HERE : \$IP_HERE;
+        if [[ \$IP_HERE == \${IP_TOTAL[\$i]}  ]];then
+        #Debug_print $'echo \${HOSTNAME_TOTAL[\$i]} > /etc/hostname'
+        echo \${HOSTNAME_TOTAL[\$i]} > /etc/hostname
+        hostname \${HOSTNAME_TOTAL[\$i]}
+        fi;
 done
+
 
 # Configure IP
 cat << EOF > /etc/sysconfig/network/ifcfg-eth0
