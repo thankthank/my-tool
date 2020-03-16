@@ -16,19 +16,15 @@
 ## Variables below need to be adapted to the deployment environment.
 ## IP addresses which are configured on target nodes. 
 MGMT_IP="192.168.37.71"
-MASTER_IP=(192.168.37.36 192.168.37.37 192.168.37.38)
-WORKER_IP=(192.168.37.39 192.168.37.40 192.168.37.41)
-## IP address for monitoring. Just pick one of worker ip and put four times as below.
-MONITORING_IP=(192.168.37.39 192.168.37.39 192.168.37.39 192.168.37.39)
+MASTER_IP=(192.168.37.34 192.168.37.13 192.168.37.16)
+WORKER_IP=(192.168.37.18 192.168.37.19 192.168.37.20)
 
 ## Network configuration variables. Hostnames you want to configure on target nodes. Even if you already configured hostname, put the configured hostnames here and skip the hostname configuration function.
 MGMT="caasp-lb"
-DOMAIN="suse.su" # DOMAIN name for this lab. 
+DOMAIN="example.com" # DOMAIN name for this lab. 
 MGMT_FQDN="$MGMT.$DOMAIN" #This is also FQDN of registry
 MASTER=(caasp-master1 caasp-master2 caasp-master3)
 WORKER=(caasp-worker1 caasp-worker2 caasp-worker3)
-## hostnames which will be used monitoring stack. This is static hostnames so you don't have to change the value below.
-MONITORING=(monitoring prometheus prometheus-alertmanager grafana)
 
 ## Functionis Configuration variables : Variables which are used by functions
 DNS_SERVER="168.126.63.1"
@@ -36,6 +32,9 @@ GATEWAY="192.168.37.254"
 NTP_CLIENT_NET="192.168.0.0/16"
 LB_IP="192.168.37.72"
 SWAP_DEV="sda2" #If you have SWAP partition with this device, it will be removed. If you don't have SWAP partition ignore it.
+## Hostnames and IPs which will be used monitoring stack. You don't want to change the value below.
+MONITORING_IP=(${WORKER[0]} ${WORKER[0]} ${WORKER[0]} ${WORKER[0]})
+MONITORING=(monitoring prometheus prometheus-alertmanager grafana)
 ## Storage class and pvc with ceph rbd
 ## The exsiting ceph cluster information.
 STORAGECLASS="ceph-rbd"
@@ -52,7 +51,7 @@ CEPH_MONITOR_IP_PORT2="192.168.37.77:$CEPH_PORT"
 
 ## SCP_RUN Framework Begins  ##
 ## Check thses below before run this script.
-froTAR_BALL_AIRGAPPED="caasp4_airgap_200316.tar" # Tar ball name
+froTAR_BALL_AIRGAPPED="caasp4_airgap_200316.tar.gz" # Tar ball name
 freSCRIPT_NAME="cm-scp_caasp_deployment" # This script name
 
 ## Default Configuration of framework variables. Modify this when you need to change Framework. 
@@ -90,6 +89,29 @@ j=${#CAASP_IP_TOTAL[@]};for i in "${WORKER_IP[@]}";do CAASP_IP_TOTAL[$j]=$i; ((j
 HOSTS=();
 # Temporary configuration
 HOSTS_TEMP=(ses-admin) # Array for temporary run
+
+
+
+## Function It will run at first to deploy tar
+if [[ ! -e $fre_MY_TOOL_INSTALLED_DIR/$freSCRIPT_NAME ]];then 
+
+# Untar the tarball
+tar xvzf $froTAR_BALL_AIRGAPPED -C $froTAR_DEPLOYED_DIR/
+# Delete the tar ball to save space
+rm -f $froTAR_BALL_AIRGAPPED
+# Create symbolic link for deployment script.
+ln -sf $PWD/$freSCRIPT_NAME $fre_MY_TOOL_INSTALLED_DIR/$freSCRIPT_NAME
+
+cd $froLOCAL_REPO_DIR
+#./deploy_repos.sh
+
+zypper --non-interactive in vim sudo;
+
+echo "The tar ball are deployed"
+echo "vim $fre_MY_TOOL_INSTALLED_DIR/$freSCRIPT_NAME, uncomment and run the functions one by one"
+exit 0
+
+fi;
 
 ## The file, which will be excuited on targets, generation begins #
 # It includes libraries
@@ -196,12 +218,14 @@ DeployRepositories_on_Management () {
 cd $froLOCAL_REPO_DIR
 ./deploy_repos.sh
 
+Debug zypper --non-interactive in vim;
 
 }
 
 RegisterRepositories_on_CaaSP () {
 
 scp -o StrictHostKeyChecking=no $MGMT_IP:$froLOCAL_REPO_DIR/register_client.sh ~/
+scp -o StrictHostKeyChecking=no $MGMT_IP:$froLOCAL_REPO_DIR/created_repo_list ~/
 Debug ./register_client.sh $MGMT_IP
 
 }
@@ -213,8 +237,13 @@ do ln -sf $froLOCAL_REPO_DIR/my-tool/\$i $fre_MY_TOOL_INSTALLED_DIR/\$i
 done;
 
 ## Hostlist generation
-echo "## Ceph Nodes" > ~/hostlist;
-for i in ${MON_IP[@]};
+echo "## Master Nodes" > ~/hostlist;
+for i in ${MASTER_IP[@]};
+do
+	echo \$i >> ~/hostlist	
+done;
+echo "## Worker Nodes" >> ~/hostlist;
+for i in ${WORKER_IP[@]};
 do
 	echo \$i >> ~/hostlist	
 done;
@@ -372,7 +401,7 @@ echo Addtional Node
 cd ~/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
 
 ## Addtional Master or Worker nodes using skuba
-Debug skuba -v 5 node join --role \$ROLE --user sles --sudo --target \$HOST.$DOMAIN 
+Debug skuba -v 5 node join --role \$ROLE --user sles --sudo --target \$HOST.$DOMAIN \$HOST
 
 }
 
@@ -706,7 +735,7 @@ done
 echo "Access URL : https://dashboard.$DOMAIN:30001"
 echo;
 echo 'Login with the created token, ~/dashboard.token'
-#echo "Please use firefox as Web Browser not Chrome. Chrome will not allow access"
+echo "Please use firefox as Web Browser not Chrome. Chrome will not allow access"
 echo "------------------------------------------";echo;
 
 }
@@ -864,6 +893,7 @@ DNS.1 = prometheus-alertmanager.$DOMAIN
 DNS.2 = prometheus.$DOMAIN
 DNS.3 = dashboard.$DOMAIN
 DNS.4 = grafana.$DOMAIN
+DNS.5 = $MGMT.$DOMAIN
 
 
 EOF
@@ -988,6 +1018,12 @@ openssl ca -config reg.cnf -policy policy_anything -days 3650 -out \$CADIR/certs
 
 
 Local_registry_deployment_on_Management () {
+
+Debug zypper --non-interactive in docker;
+Debug systemctl enable docker;
+Debug systemctl start docker;
+
+	
 Debug mkdir -p /etc/docker_registry/certs
 Debug cp -v ~/cmd_cert/demoCA/certs/monitoring_crt.pem /etc/docker_registry/certs/
 Debug cp -v ~/cmd_cert/demoCA/private/monitoring_key.pem /etc/docker_registry/certs/
@@ -1191,7 +1227,7 @@ local CEPH_USER="caaspuserdemo"
 ceph osd pool create \$CEPH_POOL 128 128
 ## Replication size to 1. No redundancy. Not recommened for production.
 ceph osd pool set \$CEPH_POOL min_size 1
-ceph osd pool set \$CEPH_USER size 1
+ceph osd pool set \$CEPH_POOL size 1
 ceph auth get-or-create client.\$CEPH_USER mon "allow r" osd "allow class-read object_prefix rbd_children, allow rwx pool=\$CEPH_POOL" -o ceph.client.user.keyring
 
 local USER_SECRET=\$(ceph auth get-key client.\$CEPH_USER)
@@ -1500,6 +1536,8 @@ cp ~/cmd_cert/demoCA/certs/monitoring_crt.pem \$MON_CONFIG_DIR/
 Debug kubectl create -n monitoring secret tls monitoring-tls --key \$MON_CONFIG_DIR/monitoring_key.pem --cert \$MON_CONFIG_DIR/monitoring_crt.pem
 
 Debug zypper --non-interactive in apache2-utils
+echo;
+echo "Create password for admin login"
 Debug htpasswd -c \$MON_CONFIG_DIR/auth admin
 
 Debug kubectl create secret generic -n monitoring prometheus-basic-auth --from-file=\$MON_CONFIG_DIR/auth
@@ -1898,6 +1936,8 @@ Registry_proxy_on_CaaSP () {
 Debug mkdir -p /etc/containers	
 Debug_print Add proxy configuraion in /etc/containers/registries.conf 
 cat << EOF > /etc/containers/registries.conf
+unqualified-search-registries = ["docker.io"]
+
 [[registry]]
 prefix = "registry.suse.com"
 location = "$MGMT_FQDN"
@@ -1918,7 +1958,9 @@ prefix = "registry.opensuse.org/kubic"
 location = "$MGMT_FQDN/caasp/v4"
 EOF
 
-systemctl restart crio.service
+if [[ \$(systemctl list-unit-files | grep crio.service) =~ "crio" ]]; then 
+	Debug	systemctl restart crio.service
+fi;
 
 }
 
@@ -1965,14 +2007,11 @@ Debug echo "test"
 ## USER jobs Begins ##
 ######################
 
-## Deployment tool preparation functions
-#AirgappedTarBallDeployment_on_Management
 
 ## Run the function below when ssh access with key is not implemented. 
 ## If you want to use different public/private keys you can locate the keys in $froLOCAL_REPO_DIR/keys before runnig the function below..
 #TempSshAccessForDeployment_on_All
 
-#DeployRepositories_on_Management
 #RegisterRepositories_on_CaaSP
 #SshKnownhost_on_Management
 #MyToolDeployment_on_Management
@@ -2000,7 +2039,6 @@ Debug echo "test"
 #Registry_proxy_on_CaaSP
 
 #Create_Certificate_on_Management
-#Local_registry_remove_on_Management 
 #Local_registry_deployment_on_Management
 #Local_registry_load_images_on_Management 
 #HelmLocalChartRepoDeployment_on_Management
@@ -2010,6 +2048,7 @@ Debug echo "test"
 #Initialize_the_cluster_on_Management
 
 ## From here, tasks need to be done one by one slowly!!!!!!!!!!!!!!!
+## Watch pod deployment status with 'kubectl -n kube-system get pods -o wide -w --all-namespaces'. Once pods deployment on each node is finished, proceed next step.
 #Bootstrap_the_cluster_on_Management
 #Setup_kubectl_on_Management
 
@@ -2029,14 +2068,14 @@ Debug echo "test"
 
 #Helm_Deployment_on_Management
 
+#Kubernetes_UI_on_Management
+
 ## Storageclass creation and secret creation in monitoring, kube-system and default namespace
 ##########################
 ## Manual task below
 ## 1. Configure root ssh access with key to Ceph Admin node.
 ## 2. And then run the function below.
 #StorageclassPVCwithCephRBD_on_Management
-
-#Kubernetes_UI_on_Management
 
 ## Monitoring Deployment. 
 #NginxIngressControllerDeployment_on_Management
@@ -2049,10 +2088,14 @@ Debug echo "test"
 #CentralizedLoggingAgent_on_Management
 
 ## ETC
+#Local_registry_remove_on_Management 
 #start_ManagementComponentsAfterReboot_on_Management
 #Test_on_CaaSP
 #AccessProxy_on_Management
 #PreparationBeforeDemo_on_Management
+## Deployment tool preparation functions
+#AirgappedTarBallDeployment_on_Management
+#DeployRepositories_on_Management
 
 ## The functions in WIP
 ## Update nodes
@@ -2143,8 +2186,11 @@ do
 
         echo;echo "================CMD_Started on $i==================";
         scp -o StrictHostKeyChecking=no  /tmp/$freGENERATED_SCRIPT $freUSER@$i:$freSCP_RUN_Target_dir/${freGENERATED_SCRIPT}_copy;
-	ssh -o StrictHostKeyChecking=no $freUSER@$i sudo su - root -c "\"bash ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy\""
-	ssh -o StrictHostKeyChecking=no $freUSER@$i sudo su - root -c "\"rm -f ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy\""
+	ssh -o StrictHostKeyChecking=no $freUSER@$i bash ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy
+	ssh -o StrictHostKeyChecking=no $freUSER@$i rm -f ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy
+## If root user is not allowed
+#	ssh -o StrictHostKeyChecking=no $freUSER@$i sudo su - root -c "\"bash ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy\""
+#	ssh -o StrictHostKeyChecking=no $freUSER@$i sudo su - root -c "\"rm -f ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy\""
 	echo "================CMD_Done==================";
         echo;
 
