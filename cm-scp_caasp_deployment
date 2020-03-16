@@ -52,7 +52,7 @@ CEPH_MONITOR_IP_PORT2="192.168.37.77:$CEPH_PORT"
 
 ## SCP_RUN Framework Begins  ##
 ## Check thses below before run this script.
-froTAR_BALL_AIRGAPPED="caasp4_airgap_200309.tar" # Tar ball name
+froTAR_BALL_AIRGAPPED="caasp4_airgap_200316.tar" # Tar ball name
 freSCRIPT_NAME="cm-scp_caasp_deployment" # This script name
 
 ## Default Configuration of framework variables. Modify this when you need to change Framework. 
@@ -276,9 +276,9 @@ cat /etc/systemd/system.conf | grep ^'DefaultCPUAccounting=yes' || echo 'Default
 cat /etc/systemd/system.conf | grep ^'DefaultMemoryAccounting=yes' || echo 'DefaultMemoryAccounting=yes' >> /etc/systemd/system.conf 
 
 ## Swap off for all
-#systemctl stop dev-$SWAP_DEV.swap; systemctl mask dev-$SWAP_DEV.swap;
-#swapoff -a;systemctl stop swap.target;systemctl disable swap.target;
-#cat /etc/fstab | grep swap > swap.tt && sed -i "s~\$(cat swap.tt)~#\$(cat swap.tt)~g" /etc/fstab
+systemctl stop dev-$SWAP_DEV.swap; systemctl mask dev-$SWAP_DEV.swap;
+swapoff -a;systemctl stop swap.target;systemctl disable swap.target;
+cat /etc/fstab | grep swap > swap.tt && sed -i "s~\$(cat swap.tt)~#\$(cat swap.tt)~g" /etc/fstab
 
 ## Uniqueue Machine ID for all
 Debug rm -f /etc/machine-id
@@ -289,6 +289,42 @@ Debug systemctl restart systemd-journald
 # Need to reboot or similar job for k8s to recognize Cert
 sync;
 sync;
+}
+
+NetworkInterfaceAndHostname_on_All () {
+
+# Configure hostname
+IP_HERE=\$(ip addr show dev eth0 | grep global | head -1 | awk -F/ '{print \$1}' | awk '{print \$2}')
+
+## The first hostname set
+j=\${#IP_TOTAL[@]}
+for ((i=j; i >= 0 ; i--  ))
+do
+        #echo IP_TOTAL[] : \${IP_TOTAL[\$i]};echo IP_HERE : \$IP_HERE;
+        if [[ \$IP_HERE == \${IP_TOTAL[\$i]}  ]];then
+        #Debug_print $'echo \${HOSTNAME_TOTAL[\$i]} > /etc/hostname'
+        echo \${HOSTNAME_TOTAL[\$i]} > /etc/hostname
+        hostname \${HOSTNAME_TOTAL[\$i]}
+        fi;
+done
+
+
+# Configure IP
+cat << EOF > /etc/sysconfig/network/ifcfg-eth0
+BOOTPROTO='static'
+BROADCAST=''
+ETHTOOL_OPTIONS=''
+IPADDR='\$IP_HERE/24'
+MTU=''
+NAME=''
+NETMASK=''
+NETWORK=''
+REMOTE_IPADDR=''
+STARTMODE='auto'
+DHCLIENT_SET_DEFAULT_ROUTE='yes'
+EOF
+Debug systemctl restart network
+
 }
 
 Chrony_for_ntp_server_on_Management () {
@@ -306,17 +342,6 @@ Debug systemctl restart chronyd
 Debug systemctl enable chronyd
 }
 
-Create_a_user_for_skuba_on_All () {
-
-## add user, sudoer and public key on all
-Debug useradd -m sles
-cat /etc/sudoers | grep "sles ALL=(ALL) NOPASSWD: ALL" || echo "sles ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-if [[ ! -e /home/sles/.ssh/authorized_keys ]] ; then
-	mkdir -p /home/sles/.ssh ;chown sles:users /home/sles/.ssh ;chmod 700 /home/sles/.ssh;touch /home/sles/.ssh/authorized_keys; chown sles:users /home/sles/.ssh/authorized_keys; chmod 600 /home/sles/.ssh/authorized_keys
-fi
-## Use ssh-rsa public key of the user, sles, on management node
-echo $froPUBLIC_KEY >> /home/sles/.ssh/authorized_keys
-}
 
 Initialize_the_cluster_on_Management() {
 Debug zypper --non-interactive in -t pattern SUSE-CaaSP-Management
@@ -325,7 +350,7 @@ Debug skuba cluster init --control-plane $LB_IP my-cluster
 }
 
 Bootstrap_the_cluster_on_Management () {
-cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+cd ~/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
 Debug skuba -v 5 node bootstrap --user sles --sudo --target \${MASTER[0]}.$DOMAIN \${MASTER[0]}
 }
 
@@ -338,14 +363,16 @@ Debug ln -s ~/my-cluster/admin.conf ~/.kube/config
 
 Addtional_node_on_Management() {
 
-echo Addtional Node
-## Addtional Master node on Management
-#cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-#Debug skuba -v 5 node join --role master --user sles --sudo --target \${MASTER[2]}.$DOMAIN \${MASTER[2]}
+local ROLE=\$1;
+if [[ \$ROLE != "master" && \$ROLE != "worker" ]];then Debug echo "Input role as master or worker";return 1;fi;
+local HOST=\$2
+if [[ \$HOST == "" ]];then Debug echo "Input parameter";return 1;fi;
 
-## Addtional worker node on Management
-cd /root/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
-Debug skuba -v5  node join --role worker --user sles --sudo --target \${WORKER[2]}.$DOMAIN \${WORKER[2]}
+echo Addtional Node
+cd ~/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
+
+## Addtional Master or Worker nodes using skuba
+Debug skuba -v 5 node join --role \$ROLE --user sles --sudo --target \$HOST.$DOMAIN 
 
 }
 
@@ -361,22 +388,325 @@ Debug helm init --upgrade --service-account tiller --tiller-image $MGMT_FQDN/caa
 #Debug helm repo add stable https://kubernetes-charts.storage.googleapis.com
 }
 
-Kubernetes_UI_on_Management () {
-## Deploy kubernetes dashboard
-#Debug helm install --namespace=kube-system --name=kubernetes-dashboard localcharts/kubernetes-dashboard --version=0.6.1
 
-Debug kubectl apply -f $froLOCAL_REPO_DIR/k8s_conf/dashboard.yaml
+Kubernetes_UI_on_Management () {
+
+kubectl create namespace kubernetes-dashboard
+
+Debug_print echo "Create /tmp/dashboard_t.yaml"
+cat << EOF > /tmp/dashboard_t.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubernetes-dashboard
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+
+---
+
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+spec:
+  ports:
+    - nodePort: 30001
+      port: 443
+      targetPort: 8443
+  selector:
+    k8s-app: kubernetes-dashboard
+  type: NodePort
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard-certs
+  namespace: kubernetes-dashboard
+type: Opaque
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard-csrf
+  namespace: kubernetes-dashboard
+type: Opaque
+data:
+  csrf: ""
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard-key-holder
+  namespace: kubernetes-dashboard
+type: Opaque
+
+---
+
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard-settings
+  namespace: kubernetes-dashboard
+
+---
+
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+rules:
+  # Allow Dashboard to get, update and delete Dashboard exclusive secrets.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["kubernetes-dashboard-key-holder", "kubernetes-dashboard-certs", "kubernetes-dashboard-csrf"]
+    verbs: ["get", "update", "delete"]
+    # Allow Dashboard to get and update 'kubernetes-dashboard-settings' config map.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["kubernetes-dashboard-settings"]
+    verbs: ["get", "update"]
+    # Allow Dashboard to get metrics.
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["heapster", "dashboard-metrics-scraper"]
+    verbs: ["proxy"]
+  - apiGroups: [""]
+    resources: ["services/proxy"]
+    resourceNames: ["heapster", "http:heapster:", "https:heapster:", "dashboard-metrics-scraper", "http:dashboard-metrics-scraper"]
+    verbs: ["get"]
+
+---
+
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard
+rules:
+  # Allow Metrics Scraper to get metrics from the Metrics server
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list", "watch"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubernetes-dashboard
+subjects:
+  - kind: ServiceAccount
+    name: kubernetes-dashboard
+    namespace: kubernetes-dashboard
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: kubernetes-dashboard
+    namespace: kubernetes-dashboard
+
+---
+
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      k8s-app: kubernetes-dashboard
+  template:
+    metadata:
+      labels:
+        k8s-app: kubernetes-dashboard
+    spec:
+      containers:
+        - name: kubernetes-dashboard
+          image: $MGMT_FQDN/kubernetesui/dashboard:v2.0.0-rc3
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8443
+              protocol: TCP
+          args:
+            - --auto-generate-certificates
+            - --namespace=kubernetes-dashboard
+          # - --enable-skip-login
+            - --enable-insecure-login
+            - --disable-settings-authorizer
+            # Uncomment the following line to manually specify Kubernetes API server Host
+            # If not specified, Dashboard will attempt to auto discover the API server and connect
+            # to it. Uncomment only if the default does not work.
+            # - --apiserver-host=http://my-address:port
+          volumeMounts:
+            - name: kubernetes-dashboard-certs
+              mountPath: /certs
+              # Create on-disk volume to store exec logs
+            - mountPath: /tmp
+              name: tmp-volume
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /
+              port: 8443
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 1001
+            runAsGroup: 2001
+      volumes:
+        - name: kubernetes-dashboard-certs
+          secret:
+            secretName: kubernetes-dashboard-certs
+        - name: tmp-volume
+          emptyDir: {}
+      serviceAccountName: kubernetes-dashboard
+      nodeSelector:
+        "beta.kubernetes.io/os": linux
+      # Comment the following tolerations if Dashboard must not be deployed on master
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+
+---
+
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    k8s-app: dashboard-metrics-scraper
+  name: dashboard-metrics-scraper
+  namespace: kubernetes-dashboard
+spec:
+  ports:
+    - port: 8000
+      targetPort: 8000
+  selector:
+    k8s-app: dashboard-metrics-scraper
+
+---
+
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  labels:
+    k8s-app: dashboard-metrics-scraper
+  name: dashboard-metrics-scraper
+  namespace: kubernetes-dashboard
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      k8s-app: dashboard-metrics-scraper
+  template:
+    metadata:
+      labels:
+        k8s-app: dashboard-metrics-scraper
+      annotations:
+        seccomp.security.alpha.kubernetes.io/pod: 'runtime/default'
+    spec:
+      containers:
+        - name: dashboard-metrics-scraper
+          image: $MGMT_FQDN/kubernetesui/metrics-scraper:v1.0.1
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              scheme: HTTP
+              path: /
+              port: 8000
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+          volumeMounts:
+          - mountPath: /tmp
+            name: tmp-volume
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 1001
+            runAsGroup: 2001
+      serviceAccountName: kubernetes-dashboard
+      nodeSelector:
+        "beta.kubernetes.io/os": linux
+      # Comment the following tolerations if Dashboard must not be deployed on master
+      #tolerations:
+      #  - key: node-role.kubernetes.io/master
+      #    effect: NoSchedule
+      volumes:
+        - name: tmp-volume
+          emptyDir: {}
+EOF
+
+Debug kubectl apply -f /tmp/dashboard_t.yaml
+
 ## Dashboard token 
 Secret=\$(kubectl -n kubernetes-dashboard get secret | grep dashboard-token | awk '{print \$1}')
 kubectl -n kubernetes-dashboard describe secret \$Secret | grep ^token | awk '{ print \$2 }' > ~/dashboard.token
 
 echo;
 echo "------- K8S Dashboard Information --------"
+echo "Configure /etc/hosts as follows"
 for i in ${WORKER_IP[@]};do
-echo "Access URL : https://\$i:30001"
+echo "echo \$i dashboard.$DOMAIN >> /etc/hosts"
 done
-echo 'Login with the created token as ~/dashboard.token'
-echo "Please use firefox as Web Browser not Chrome. Chrome will not allow access"
+echo "Access URL : https://dashboard.$DOMAIN:30001"
+echo;
+echo 'Login with the created token, ~/dashboard.token'
+#echo "Please use firefox as Web Browser not Chrome. Chrome will not allow access"
 echo "------------------------------------------";echo;
 
 }
@@ -395,7 +725,7 @@ Debug screen -dm kubectl proxy --address 0.0.0.0 --accept-hosts '.*'
 
 }
 
-Create_Certificate_on_Management() {
+Create_ManagementCertificate_on_Management() {
 
 CADIR=demoCA
 rm -rf ~/cmd_cert
@@ -492,7 +822,7 @@ openssl ca -config reg.cnf -policy policy_anything -days 3650 -out \$CADIR/certs
 
 }
 
-Create_MonitorCertificate_on_Management() {
+Create_Certificate_on_Management() {
 
 CADIR=demoCA
 rm -rf ~/cmd_cert
@@ -521,11 +851,10 @@ ST = KR
 L = Seoul
 O = suse
 OU = su
-CN = grafana.$DOMAIN
+CN = $MGMT.$DOMAIN
 emailAddress = chris.chon@suse.com
 
 [v3_req]
-basicConstraints = critical,CA:FALSE
 keyUsage = critical,digitalSignature,keyEncipherment
 extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
@@ -533,6 +862,7 @@ subjectAltName = @alt_names
 [alt_names]
 DNS.1 = prometheus-alertmanager.$DOMAIN
 DNS.2 = prometheus.$DOMAIN
+DNS.3 = dashboard.$DOMAIN
 DNS.4 = grafana.$DOMAIN
 
 
@@ -540,25 +870,127 @@ EOF
 
 # Create private key and public key(request to be signed by CA)
 cd ~/cmd_cert
-#Debug openssl req -config reg.cnf -new -sha256 -key \$CADIR/private/monitoring_key.pem -out \$CADIR/requests/monitoring_req.pem 
 Debug openssl genrsa -out \$CADIR/private/monitoring_key.pem 2048
 Debug openssl req -key \$CADIR/private/monitoring_key.pem -new -sha256 -out \$CADIR/requests/monitoring_req.pem -config reg.cnf
-#Debug openssl req -config reg.cnf -new -keyout \$CADIR/private/server_key.pem -out \$CADIR/requests/server_req.pem -newkey rsa:2048
 
 touch \$CADIR/index.txt
 echo 01 > \$CADIR/serial
 
 # Create server certificate
-#openssl ca -config reg.cnf -policy policy_anything -days 3650 -out \$CADIR/certs/monitoring_crt.pem -infiles \$CADIR/requests/monitoring_req.pem
-Debug openssl x509 -req -CA ./demoCA/cacert.pem -CAkey ./demoCA/private/cakey.pem -CAcreateserial -in demoCA/requests/monitoring_req.pem  -out demoCA/certs/monitoring_crt.pem -days 365 -extensions v3_req -extfile reg.cnf
+Debug openssl x509 -req -CA ./demoCA/cacert.pem -CAcreateserial -CAkey ./demoCA/private/cakey.pem -in demoCA/requests/monitoring_req.pem  -out demoCA/certs/monitoring_crt.pem -days 3650 -extensions v3_req -extfile reg.cnf
 
 }
 
 
+
+Create_DashboardCertificate_on_Management() {
+
+CADIR=demoCA
+rm -rf ~/cmd_cert
+mkdir -p ~/cmd_cert
+cd ~/cmd_cert
+mkdir \$CADIR
+cd \$CADIR
+mkdir certs crl newcerts certificate crlnumber private requests
+chmod 700 private
+
+# Copy CA key and cert
+cp $froLOCAL_REPO_DIR/cert/natgw_cert/cacert.pem ~/cmd_cert/\$CADIR/cacert.pem
+cp $froLOCAL_REPO_DIR/cert/natgw_cert/cakey.pem ~/cmd_cert/\$CADIR/private/cakey.pem
+
+## create configuration file
+##/etc/ssl/openssl.cnf is the default
+cat << EOF > ~/cmd_cert/reg.cnf
+HOME                    = .
+RANDFILE                = \$ENV::HOME/.rnd
+[ ca ]
+default_ca      = CA_default            # The default ca section
+
+[ CA_default ]
+dir             = ./demoCA              # Where everything is kept
+certs           = ./demoCA/certs            # Where the issued certs are kept
+crl_dir         = ./demoCA/crl              # Where the issued crl are kept
+database        = ./demoCA/index.txt        # database index file.
+new_certs_dir   = ./demoCA/newcerts         # default place for new certs.
+certificate     = ./demoCA/cacert.pem       # The CA certificate
+serial          = ./demoCA/serial           # The current serial number
+crlnumber       = ./demoCA/crlnumber        # the current crl number
+crl             = ./demoCA/crl.pem          # The current CRL
+private_key     = ./demoCA/private/cakey.pem# The private key
+RANDFILE        = ./demoCA/private/.rand    # private random number file
+x509_extensions = usr_cert              # The extensions to add to the cert
+name_opt        = ca_default            # Subject Name options
+cert_opt        = ca_default            # Certificate field options
+
+default_days    = 3650                   # how long to certify for
+default_crl_days= 30                    # how long before next CRL
+default_md      = default               # use public key default MD
+preserve        = no                    # keep passed DN ordering
+policy          = policy_anything
+
+[ usr_cert ]
+nsComment                       = "OpenSSL Generated Certificate"
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid,issuer
+
+[ policy_anything ]
+countryName             = optional
+stateOrProvinceName     = optional
+localityName            = optional
+organizationName        = optional
+organizationalUnitName  = optional
+commonName              = supplied
+emailAddress            = optional
+
+[ req ]
+default_bits       = 2048
+default_md         = sha512
+default_keyfile    = key.pem
+prompt             = no
+encrypt_key        = no
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+
+[ req_distinguished_name ]
+countryName            = "KR"                     # C=
+stateOrProvinceName    = "Seoul"                 # ST=
+localityName           = "Seoul"                 # L=
+postalCode             = "11111"                 # L/postalcode=
+streetAddress          = "Samsumg-ro"            # L/street=
+organizationName       = "SUSE"        # O=
+organizationalUnitName = "SE"          # OU=
+commonName             = dashboard.$DOMAIN           # CN=
+emailAddress           = "chris.chon@suse.com"  # CN/emailAddress=
+
+[ v3_req ]
+subjectAltName  = @alt_names
+
+[ alt_names ]
+DNS.1 = prometheus-alertmanager.$DOMAIN
+DNS.2 = prometheus.$DOMAIN
+DNS.4 = grafana.$DOMAIN
+
+EOF
+
+# Create private key and public key(request to be signed by CA)
+cd ~/cmd_cert
+openssl req -config reg.cnf -new -keyout \$CADIR/private/dashboard_key.pem -out \$CADIR/requests/dashboard_req.pem -newkey rsa:2048
+
+touch \$CADIR/index.txt
+echo 01 > \$CADIR/serial
+
+# Create server certificate
+openssl ca -config reg.cnf -policy policy_anything -days 3650 -out \$CADIR/certs/dashboard_crt.pem -infiles \$CADIR/requests/dashboard_req.pem
+
+
+}
+
+
+
 Local_registry_deployment_on_Management () {
 Debug mkdir -p /etc/docker_registry/certs
-Debug cp -v ~/cmd_cert/demoCA/certs/server_crt.pem /etc/docker_registry/certs/
-Debug cp -v ~/cmd_cert/demoCA/private/server_key.pem /etc/docker_registry/certs/
+Debug cp -v ~/cmd_cert/demoCA/certs/monitoring_crt.pem /etc/docker_registry/certs/
+Debug cp -v ~/cmd_cert/demoCA/private/monitoring_key.pem /etc/docker_registry/certs/
 cat << EOF > /etc/docker_registry/config.yml
 version: 0.1
 log:
@@ -574,8 +1006,8 @@ http:
   headers:
     X-Content-Type-Options: [nosniff]
   tls:
-    certificate: /etc/docker/registry/certs/server_crt.pem
-    key: /etc/docker/registry/certs/server_key.pem
+    certificate: /etc/docker/registry/certs/monitoring_crt.pem
+    key: /etc/docker/registry/certs/monitoring_key.pem
 health:
   storagedriver:
     enabled: true
@@ -587,7 +1019,7 @@ Debug mkdir -p /var/lib/docker/registry
 Debug docker load -i $froLOCAL_REPO_DIR/docker_images_file/registry.2.6.2.tar
 Debug docker container run -d -p 443:5000 --name suse-registry -v /etc/docker_registry:/etc/docker/registry -v /var/lib/docker/registry:/var/lib/registry registry.suse.com/sles12/registry:2.6.2
 
-#Debug docker container run -d --restart=always -p 5000:443 --name registry -v /var/lib/docker/registry:/var/lib/registry -v /var/lib/docker/certs:/certs -e REGISTRY_HTTP_ADDR=0.0.0.0:443 -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/server_crt.pem -e REGISTRY_HTTP_TLS_key=/crts/server_key.pem registry.suse.com/sles12/registry:2.6.2
+#Debug docker container run -d --restart=always -p 5000:443 --name registry -v /var/lib/docker/registry:/var/lib/registry -v /var/lib/docker/certs:/certs -e REGISTRY_HTTP_ADDR=0.0.0.0:443 -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/monitoring_crt.pem -e REGISTRY_HTTP_TLS_key=/crts/monitoring_key.pem registry.suse.com/sles12/registry:2.6.2
 }
 
 Local_registry_load_images_on_Management ()
@@ -898,9 +1330,9 @@ backend k8s-api
     balance roundrobin
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
-        server caasp-master1 192.168.37.36:6443 check
-#        server caasp-master2 192.168.37.37:6443 check
-#        server caasp-master3 192.168.37.38:6443 check
+	server ${MASTER[0]} ${MASTER_IP[0]}:6443 check
+#        server ${MASTER[1]} ${MASTER_IP[1]}:6443 check
+#        server ${MASTER[2]} ${MASTER_IP[2]}:6443 check
 
 frontend dex
     bind :32000
@@ -913,9 +1345,9 @@ backend dex
     balance roundrobin
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
-        server caasp-master1 192.168.37.36:32000 check
-#        server caasp-master2 192.168.37.37:32000 check
-#        server caasp-master3 192.168.37.38:32000 check
+	server ${MASTER[0]} ${MASTER_IP[0]}:32000 check
+#        server ${MASTER[1]} ${MASTER_IP[1]}:32000 check
+#        server ${MASTER[2]} ${MASTER_IP[2]}:32000 check
 
 frontend gangway
     bind :32001
@@ -928,9 +1360,9 @@ backend gangway
     balance roundrobin
     default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
 
-        server caasp-master1 192.168.37.36:32001 check
-#        server caasp-master2 192.168.37.37:32001 check
-#        server caasp-master3 192.168.37.38:32001 check
+	server ${MASTER[0]} ${MASTER_IP[0]}:32001 check
+#        server ${MASTER[1]} ${MASTER_IP[1]}:32001 check
+#        server ${MASTER[2]} ${MASTER_IP[2]}:32001 check
 
 EOF
 
@@ -940,6 +1372,88 @@ docker run -d -p 6443:6443 -p 32000:32000 -p 32001:32001 --name haproxy -v /etc/
 ip addr add $LB_IP/24 dev eth0 brd +
 
 }
+
+LoadbalancerDeploymentwithThreeMaster_on_Management () {
+
+#zypper --non-interactive in docker;
+#systemctl start docker; systemctl enable docker;
+Debug docker container rm -f haproxy;
+
+mkdir -p /etc/docker_haproxy
+cat << EOF > /etc/docker_haproxy/haproxy.cfg
+global
+#Disable log below after you debug haproxy
+#  log /dev/log local0 info
+  daemon
+
+defaults
+  log     global
+  mode    tcp
+  option  tcplog
+  option  redispatch
+  option  tcpka
+  option  dontlognull
+  retries 2
+  maxconn 2000
+  timeout connect   5s
+  timeout client    5s
+  timeout server    5s
+  timeout tunnel    86400s
+
+frontend k8s-api
+    bind :6443
+    timeout client 5s
+    default_backend k8s-api
+
+backend k8s-api
+    option tcp-check
+        timeout server 5s
+    balance roundrobin
+    default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
+
+	server ${MASTER[0]} ${MASTER_IP[0]}:6443 check
+        server ${MASTER[1]} ${MASTER_IP[1]}:6443 check
+        server ${MASTER[2]} ${MASTER_IP[2]}:6443 check
+
+frontend dex
+    bind :32000
+    timeout client 5s
+    default_backend dex
+
+backend dex
+    option tcp-check
+        timeout server 5s
+    balance roundrobin
+    default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
+
+	server ${MASTER[0]} ${MASTER_IP[0]}:32000 check
+        server ${MASTER[1]} ${MASTER_IP[1]}:32000 check
+        server ${MASTER[2]} ${MASTER_IP[2]}:32000 check
+
+frontend gangway
+    bind :32001
+    timeout client 5s
+    default_backend dex
+
+backend gangway
+    option tcp-check
+        timeout server 5s
+    balance roundrobin
+    default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
+
+	server ${MASTER[0]} ${MASTER_IP[0]}:32001 check
+        server ${MASTER[1]} ${MASTER_IP[1]}:32001 check
+        server ${MASTER[2]} ${MASTER_IP[2]}:32001 check
+
+EOF
+
+docker load -i $froLOCAL_REPO_DIR/docker_images_file/haproxy.1.8.tar
+docker run -d -p 6443:6443 -p 32000:32000 -p 32001:32001 --name haproxy -v /etc/docker_haproxy/haproxy.cfg:/etc/haproxy/haproxy.cfg haproxy:1.8 -f /etc/haproxy/haproxy.cfg
+
+ip addr add $LB_IP/24 dev eth0 brd +
+
+}
+
 
 NginxIngressControllerDeployment_on_Management () {
 
@@ -1290,30 +1804,6 @@ echo "Port 25 opened for SMTP sender"
 
 RsyslogserverDeployment_on_Management () {
 
-#mkdir -p /var/lib/docker/rsyslog
-#touch /var/lib/docker/rsyslog/syslog
-
-#mkdir -p /etc/docker_rsyslog
-#cat << EOF > /etc/docker_rsyslog/remote.conf
-#
-## ######### Receiving Messages from Remote Hosts ##########
-## TCP Syslog Server:
-## provides TCP syslog reception and GSS-API (if compiled to support it)
-#$ModLoad imtcp.so         # load module
-###$UDPServerAddress 10.10.0.1 # force to listen on this IP only
-#$InputTCPServerRun 514 # Starts a TCP server on selected port
-#
-## UDP Syslog Server:
-##$ModLoad imudp.so         # provides UDP syslog reception
-###$UDPServerAddress 10.10.0.1 # force to listen on this IP only
-##$UDPServerRun 514         # start a UDP syslog server at standard port 514
-#
-#EOF
-
-#Debug docker image pull $MGMT_FQDN/caasp/v4/rsyslog:8.39.0
-#Debug docker run -d -p 514:514/udp -p 514:514 --name rsyslogserver -v /root/local_repo:/root/local_repo -v /etc/docker_rsyslog/remote.conf:/etc/rsyslog.d/remote.conf -v /var/lib/docker/rsyslog/syslog:/var/log/syslog $MGMT_FQDN/caasp/v4/rsyslog:8.39.0 -f /etc/rsyslog.conf
-
-
 mkdir -p /var/lib/docker/rsyslog
 touch /var/lib/docker/rsyslog/syslog
 
@@ -1326,12 +1816,6 @@ CentralizedLoggingAgent_on_Management () {
 Debug kubectl create namespace clogging
 
 Debug helm install --namespace=clogging localcharts/log-agent-rsyslog --name rsyslog-agent --set server.host=$MGMT_IP --set server.port=514 --set server.protocol=UDP	
-
-}
-
-CreateSlesUser_on_Management () {
-
-useradd -m sles; su - sles -c 'ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa';
 
 }
 
@@ -1409,7 +1893,7 @@ Debug skuba -v 5 addon upgrade apply
 
 }
 
-registry_proxy_on_CaaSP () {
+Registry_proxy_on_CaaSP () {
 
 Debug mkdir -p /etc/containers	
 Debug_print Add proxy configuraion in /etc/containers/registries.conf 
@@ -1483,10 +1967,10 @@ Debug echo "test"
 
 ## Deployment tool preparation functions
 #AirgappedTarBallDeployment_on_Management
+
 ## Run the function below when ssh access with key is not implemented. 
-## If you want to use different public/private keys you can locate the keys in $froLOCAL_REPO_DIR/keys.
+## If you want to use different public/private keys you can locate the keys in $froLOCAL_REPO_DIR/keys before runnig the function below..
 #TempSshAccessForDeployment_on_All
-#CreateUserWithKeyAccess_on_All
 
 #DeployRepositories_on_Management
 #RegisterRepositories_on_CaaSP
@@ -1503,16 +1987,17 @@ Debug echo "test"
 ## 1. Configure for Hostname and static network (IP, Subnet MASK) using Yast or networkfile for each node.
 ## 2. Reboot all nodes
 ##
-## If you use the network interface, eth0, you can run the function below to configure static network and hostname.
+## If you use the network interface, eth0, you can run the function below to configure static network and hostname instead of manual network configuration.
 #NetworkInterfaceAndHostname_on_All
 
 #Chrony_for_ntp_server_on_Management
 #Chrony_for_ntp_client_on_CaaSP
 
 ## CaaSP deployment
-#CreateSlesUser_on_Management
-#Create_a_user_for_skuba_on_All
-#registry_proxy_on_CaaSP
+## sles user creation for skuba
+#CreateUserWithKeyAccess_on_All
+
+#Registry_proxy_on_CaaSP
 
 #Create_Certificate_on_Management
 #Local_registry_remove_on_Management 
@@ -1521,15 +2006,26 @@ Debug echo "test"
 #HelmLocalChartRepoDeployment_on_Management
 #LoadbalancerDeployment_on_Management 
 
-## k8s cluster deployment
-#PreparationBeforeDemo_on_Management
+## K8s cluster deployment
 #Initialize_the_cluster_on_Management
+
 ## From here, tasks need to be done one by one slowly!!!!!!!!!!!!!!!
 #Bootstrap_the_cluster_on_Management
 #Setup_kubectl_on_Management
-## Need manual change on hostname for the job below!
-#Addtional_node_on_Management
-#LoadbalancerDeployment_on_Management 
+
+## Add the second master node
+#Addtional_node_on_Management master ${MASTER[1]}
+## Add the third master node
+#Addtional_node_on_Management master ${MASTER[2]}
+## Add the first worker node
+#Addtional_node_on_Management worker ${WORKER[0]}
+## Add the second worker node
+#Addtional_node_on_Management worker ${WORKER[1]}
+## Add the third worker node
+#Addtional_node_on_Management worker ${WORKER[2]}
+
+## If you deployed three masters, run the function.
+#LoadbalancerDeploymentwithThreeMaster_on_Management
 
 #Helm_Deployment_on_Management
 
@@ -1540,24 +2036,25 @@ Debug echo "test"
 ## 2. And then run the function below.
 #StorageclassPVCwithCephRBD_on_Management
 
-## Dashboard
 #Kubernetes_UI_on_Management
-
-## Stratos Deployment
-## Storage class and ingress controller are needed
-#StratosDeployment_on_Management
 
 ## Monitoring Deployment. 
 #NginxIngressControllerDeployment_on_Management
 #SMTPsender_on_Management
-#Create_MonitorCertificate_on_Management
 #MonitoringStackDeployment_on_Management
 #MonitoringETCDCluster_on_Management
 
 ## Centralized Logging
 #RsyslogserverDeployment_on_Management
-CentralizedLoggingAgent_on_Management
+#CentralizedLoggingAgent_on_Management
 
+## ETC
+#start_ManagementComponentsAfterReboot_on_Management
+#Test_on_CaaSP
+#AccessProxy_on_Management
+#PreparationBeforeDemo_on_Management
+
+## The functions in WIP
 ## Update nodes
 ## 0. OS manual update configuration
 ## 1. Copy the airgap tar file and overwrite into the same directory
@@ -1567,12 +2064,6 @@ CentralizedLoggingAgent_on_Management
 #HelmLocalChartRepoDeployment_on_Management
 ## OS update
 #UpdateNodes_on_Management
-
-## ETC
-#start_ManagementComponentsAfterReboot_on_Management
-#Test_on_CaaSP
-#AccessProxy_on_Management
-
 
 
 ######################
@@ -1597,13 +2088,13 @@ rm -f /tmp/${freSCRIPT_NAME}_HosSe.t;touch /tmp/${freSCRIPT_NAME}_HosSe.t;
 rm -f /tmp/${freSCRIPT_NAME}_function.t; touch /tmp/${freSCRIPT_NAME}_function.t;
 # Find deployment script in the current directory. If it is not in current directory, find the script in ${fre_MY_TOOL_INSTALLED_DIR}
 if [[ -e ${PWD}/${freSCRIPT_NAME} ]]; then freSCRIPT_NAME_FOUND="${PWD}/${freSCRIPT_NAME}";else freSCRIPT_NAME_FOUND="${fre_MY_TOOL_INSTALLED_DIR}/${freSCRIPT_NAME}";fi;
-awk -F_ -v VHOS="/tmp/${freSCRIPT_NAME}_HosSe.t" -v VFUN="/tmp/${freSCRIPT_NAME}_function.t;"  $'
+awk  -v VHOS="/tmp/${freSCRIPT_NAME}_HosSe.t" -v VFUN="/tmp/${freSCRIPT_NAME}_function.t;"  $'
 	BEGIN{VEXE=0};{
-	if($1=="## Here to run") {VEXE=1;};
+	if($0=="## Here to run") {VEXE=1;};
 	## mapping
-	if(VEXE==1 && ($0~/Management *$/ || $0~/All *$/ || $0~/CaaSP *$/ || $0~/Temp *$/  ) && $1!~/^ *#/) {
-		print "BA="$0";echo ${BA##*_} >> "VHOS;  
-		print "BA="$0";echo ${BA} >> "VFUN;  
+	if(VEXE==1 && ($1~/Management$/ || $1~/All$/ || $1~/CaaSP$/ || $1~/Temp$/  ) && $1 !~/^ *#/) {
+		print "BA="$1";echo ${BA##*_} >> "VHOS;  
+		print "BA="$1";echo ${BA} >> "VFUN;  
 	};
 	if($1=="## Here done") {VEXE=0;}
 	};
