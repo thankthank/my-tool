@@ -16,8 +16,8 @@
 ## Variables below need to be adapted to the deployment environment.
 ## IP addresses which are configured on target nodes. 
 MGMT_IP="192.168.37.71"
-MASTER_IP=(192.168.37.34 192.168.37.13 192.168.37.16)
-WORKER_IP=(192.168.37.18 192.168.37.19 192.168.37.20)
+MASTER_IP=(192.168.37.23 192.168.37.24 192.168.37.25)
+WORKER_IP=(192.168.37.26 192.168.37.27 192.168.37.28)
 
 ## Network configuration variables. Hostnames you want to configure on target nodes. Even if you already configured hostname, put the configured hostnames here and skip the hostname configuration function.
 MGMT="caasp-lb"
@@ -33,7 +33,7 @@ NTP_CLIENT_NET="192.168.0.0/16"
 LB_IP="192.168.37.72"
 SWAP_DEV="sda2" #If you have SWAP partition with this device, it will be removed. If you don't have SWAP partition ignore it.
 ## Hostnames and IPs which will be used monitoring stack. You don't want to change the value below.
-MONITORING_IP=(${WORKER[0]} ${WORKER[0]} ${WORKER[0]} ${WORKER[0]})
+MONITORING_IP=(${WORKER_IP[0]} ${WORKER_IP[0]} ${WORKER_IP[0]} ${WORKER_IP[0]})
 MONITORING=(monitoring prometheus prometheus-alertmanager grafana)
 ## Storage class and pvc with ceph rbd
 ## The exsiting ceph cluster information.
@@ -103,7 +103,7 @@ rm -f $froTAR_BALL_AIRGAPPED
 ln -sf $PWD/$freSCRIPT_NAME $fre_MY_TOOL_INSTALLED_DIR/$freSCRIPT_NAME
 
 cd $froLOCAL_REPO_DIR
-#./deploy_repos.sh
+./deploy_repos.sh
 
 zypper --non-interactive in vim sudo;
 
@@ -1847,6 +1847,11 @@ touch /var/lib/docker/rsyslog/syslog
 
 Debug docker image pull $MGMT_FQDN/robbert229/rsyslog:latest
 Debug docker run -d -p 514:514/udp -p 514:514 --name rsyslogserver -v /root/local_repo:/root/local_repo -v /var/lib/docker/rsyslog/syslog:/var/log/syslog $MGMT_FQDN/robbert229/rsyslog:latest
+
+echo;echo;echo;echo;
+echo "########################################################################################"
+echo "Syslogs sented to this rsyslog server will be stored at /var/lib/docker/rsyslog/syslog"
+echo "Watch log by 'tail -f /var/lib/docker/rsyslog/syslog', once this syslog servers get syslogs from others"
 }
 
 CentralizedLoggingAgent_on_Management () {
@@ -1976,7 +1981,7 @@ Debug docker start suse-registry
 Debug ip addr add $LB_IP/24 dev eth0 brd +
 
 # Start load Balancer
-Debug systemctl start hapeozy
+Debug systemctl start haproxy
 
 # Start helm serve
 Debug screen -dm helm serve --repo-path $froLOCAL_REPO_DIR/helm_local_repo --address $MGMT_FQDN:9001
@@ -2070,6 +2075,10 @@ Debug echo "test"
 
 #Kubernetes_UI_on_Management
 
+## Centralized Logging
+#RsyslogserverDeployment_on_Management
+#CentralizedLoggingAgent_on_Management
+
 ## Storageclass creation and secret creation in monitoring, kube-system and default namespace
 ##########################
 ## Manual task below
@@ -2082,10 +2091,6 @@ Debug echo "test"
 #SMTPsender_on_Management
 #MonitoringStackDeployment_on_Management
 #MonitoringETCDCluster_on_Management
-
-## Centralized Logging
-#RsyslogserverDeployment_on_Management
-#CentralizedLoggingAgent_on_Management
 
 ## ETC
 #Local_registry_remove_on_Management 
