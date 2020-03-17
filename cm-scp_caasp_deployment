@@ -51,7 +51,7 @@ CEPH_MONITOR_IP_PORT2="192.168.37.77:$CEPH_PORT"
 
 ## SCP_RUN Framework Begins  ##
 ## Check thses below before run this script.
-froTAR_BALL_AIRGAPPED="caasp4_airgap_200316.tar.gz" # Tar ball name
+froTAR_BALL_AIRGAPPED=("caasp4_200317.tar.gz" "sles15sp1_200317.tar") # Tar ball name
 freSCRIPT_NAME="cm-scp_caasp_deployment" # This script name
 
 ## Default Configuration of framework variables. Modify this when you need to change Framework. 
@@ -92,13 +92,19 @@ HOSTS_TEMP=(ses-admin) # Array for temporary run
 
 
 
-## Function It will run at first to deploy tar
+## It will run at first to deploy tar
 if [[ ! -e $fre_MY_TOOL_INSTALLED_DIR/$freSCRIPT_NAME ]];then 
 
 # Untar the tarball
-tar xvzf $froTAR_BALL_AIRGAPPED -C $froTAR_DEPLOYED_DIR/
-# Delete the tar ball to save space
-rm -f $froTAR_BALL_AIRGAPPED
+for i in ${froTAR_BALL_AIRGAPPED[@]};do
+	FILE_EXTENSION=${i##*.}
+	if [[ $FILE_EXTENSION == "tar" ]];then tar xvf $i -C $froTAR_DEPLOYED_DIR/
+	else tar xvfz $i -C $froTAR_DEPLOYED_DIR/
+	fi
+	# Delete the tar ball to save space
+	rm -f $i
+done;
+
 # Create symbolic link for deployment script.
 ln -sf $PWD/$freSCRIPT_NAME $fre_MY_TOOL_INSTALLED_DIR/$freSCRIPT_NAME
 
@@ -225,7 +231,7 @@ Debug zypper --non-interactive in vim;
 RegisterRepositories_on_CaaSP () {
 
 scp -o StrictHostKeyChecking=no $MGMT_IP:$froLOCAL_REPO_DIR/register_client.sh ~/
-scp -o StrictHostKeyChecking=no $MGMT_IP:$froLOCAL_REPO_DIR/created_repo_list ~/
+scp -o StrictHostKeyChecking=no $MGMT_IP:$froLOCAL_REPO_DIR/created_repo_list* ~/
 Debug ./register_client.sh $MGMT_IP
 
 }
