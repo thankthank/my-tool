@@ -15,9 +15,9 @@
 ######################
 ## Variables below need to be adapted to the deployment environment.
 ## IP addresses which are configured on target nodes. 
-MGMT_IP="192.168.37.75"
-MON_IP=(192.168.37.76 192.168.37.77 192.168.37.78)
-OSD_IP=(192.168.37.76 192.168.37.77 192.168.37.78)
+MGMT_IP="192.168.37.25"
+MON_IP=(192.168.37.26 192.168.37.27 192.168.37.28)
+OSD_IP=(192.168.37.26 192.168.37.27 192.168.37.28)
 ## Network configuration variables. Hostnames you want to configure on target nodes. Even if you already configured hostname, put the configured hostnames here and skip the hostname configuration function.
 MGMT="ses-admin"
 DOMAIN="suse.su" # DOMAIN name for this lab. 
@@ -92,7 +92,7 @@ SES_IP_TOTAL=(${SES_IP_TOTAL[@]})
 Debug () {
 echo;echo;echo;echo;
 echo '(('CMD'))' "\$@" | tee -a $froLOGFILE
-while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ \$INPUT == "y" ]];then  break;fi;done
+#while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ \$INPUT == "y" ]];then  break;fi;done
 echo '(('OUTPUT-Started:\$(date +%FT%H:%M:%S)'))' | tee -a $froLOGFILE
 "\$@" | tee -a $froLOGFILE
 echo '(('OUTPUT-Done:\$(date +%FT%H:%M:%S)'))' | tee -a $froLOGFILE
@@ -104,7 +104,7 @@ echo;echo;echo;echo;
 # Use single quote in Single quote
 # Debug_print $'echo \'ls -al\' | grep tt '
 echo '(('CMD_print'))' "\$@" | tee -a $froLOGFILE
-while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ \$INPUT == "y" ]];then  break;fi;done
+#while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ \$INPUT == "y" ]];then  break;fi;done
 echo '(('OUTPUT:\$(date +%FT%H:%M:%S)'))' | tee -a $froLOGFILE
 }
 
@@ -184,10 +184,12 @@ cd $froLOCAL_REPO_DIR
 
 }
 
-RegisterRepositories_on_SES () {
+RegisterRepositories_on_All () {
 
-scp -o StrictHostKeyChecking=no $MGMT_IP:$froLOCAL_REPO_DIR/register_client.sh ~/
-Debug ./register_client.sh $MGMT_IP
+local REPO="192.168.37.25"
+scp -o StrictHostKeyChecking=no \$REPO:/root/local_repo/register_client.sh \$REPO:/root/local_repo/created_repo_list_ses6  \$REPO:/root/local_repo/created_repo_list_sle15sp1  ~/
+#Debug ./register_client.sh $MGMT_IP
+Debug ./register_client.sh 192.168.37.17
 
 }
 
@@ -379,7 +381,7 @@ echo "Implement zap disk"
 
 DeepseaDeployment_on_Management() {
 
-zypper --non-interactive in deepsea
+zypper --non-interactive in deepsea deepsea-cli
 # Target for deepsea
 Debug cat /srv/pillar/ceph/deepsea_minions.sls
 cat << EOF > /srv/pillar/ceph/deepsea_minions.sls
@@ -397,7 +399,7 @@ Debug zypper --non-interactive up
 
 Stage0_on_Management () {
 
-Debug echo "Run deepsea monitor in other window"
+Debug echo "Run 'deepsea monitor' in other window"
 Debug salt-run state.orch ceph.stage.0
 ## 'deepsea stage run' is not working in this framework.
 #deepsea stage run ceph.stage.0
@@ -405,8 +407,8 @@ Debug salt-run state.orch ceph.stage.0
 
 Stage1_on_Management () {
 
-#Debug echo "Run deepsea monitor in other window"
-#Debug salt-run state.orch ceph.stage.1
+Debug echo "Run deepsea monitor in other window"
+Debug salt-run state.orch ceph.stage.1
 
 Debug cp /usr/share/doc/packages/deepsea/examples/policy* /srv/pillar/ceph/proposals/
 echo;echo "/srv/pillar/ceph/proposals/policy.cfg is created"
@@ -466,7 +468,7 @@ Stage2_on_Management () {
 
 Debug salt-run state.orch ceph.stage.2 
 
-## disable subvolume valication
+## disable subvolume validation
 echo 'subvolume_init: disabled' >> /srv/pillar/ceph/stack/global.yml
 Debug salt '*' saltutil.pillar_refresh
 
@@ -479,6 +481,14 @@ Stage3_on_Management () {
 
 Debug salt-run state.orch ceph.stage.3 
 Debug ceph -s
+
+## Ceph Manager
+echo;echo;
+echo "##################"
+echo "Ceph dashboard URL"
+ceph mgr services | grep dashboard
+echo "default ID/PW"
+salt-call grains.get dashboard_creds
 
 }
 
@@ -500,13 +510,13 @@ Debug ceph -s
 PoolRbdmanagement_on_Management () {
 
 ## Pool creation
-#Debug ceph osd pool create pool-test 128 128
-#Debug ceph osd pool set pool-test min_size 1
-#Debug ceph osd pool set pool-test size 1
+Debug ceph osd pool create pool-general 128 128
+Debug ceph osd pool set pool-general min_size 1
+Debug ceph osd pool set pool-general size 1
 
 ## Pool delete
-Debug ceph tell mon.* injectargs --mon-allow-pool-delete=true
-Debug ceph osd pool delete pool-test pool-test --yes-i-really-really-mean-it
+#Debug ceph tell mon.* injectargs --mon-allow-pool-delete=true
+#Debug ceph osd pool delete pool-test pool-test --yes-i-really-really-mean-it
 
 ## RBD Creation and map
 #Debug rbd -p pool-test create testrbd --size 10240 
@@ -555,6 +565,7 @@ ls
 
 #DeployRepositories_on_Management
 #RegisterRepositories_on_SES
+#RegisterRepositories_on_All
 #SshKnownhost_on_Management
 #MyToolDeployment_on_Management
 
@@ -603,7 +614,7 @@ ls
 #Stage5_on_Management
 
 ## SES Operation
-PoolRbdmanagement_on_Management
+#PoolRbdmanagement_on_Management
 
 ## Etc
 #Test_on_All
@@ -686,8 +697,10 @@ do
 
         echo;echo "================CMD_Started on $i==================";
         scp -o StrictHostKeyChecking=no  /tmp/$freGENERATED_SCRIPT $freUSER@$i:$freSCP_RUN_Target_dir/${freGENERATED_SCRIPT}_copy;
-	ssh -o StrictHostKeyChecking=no $freUSER@$i sudo su - root -c "\"bash ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy\""
-	ssh -o StrictHostKeyChecking=no $freUSER@$i sudo su - root -c "\"rm -f ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy\""
+#	ssh -o StrictHostKeyChecking=no $freUSER@$i sudo su - root -c "\"bash ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy\""
+#	ssh -o StrictHostKeyChecking=no $freUSER@$i sudo su - root -c "\"rm -f ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy\""
+	ssh -o StrictHostKeyChecking=no $freUSER@$i bash ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy
+	ssh -o StrictHostKeyChecking=no $freUSER@$i rm -f ${freSCP_RUN_Target_dir}/${freGENERATED_SCRIPT}_copy
 	echo "================CMD_Done==================";
         echo;
 
