@@ -16,15 +16,15 @@
 ## Variables below need to be adapted to the deployment environment.
 ## IP addresses which are configured on target nodes. 
 MGMT_IP="192.168.37.71"
-MASTER_IP=(192.168.37.23 192.168.37.24 192.168.37.25)
-WORKER_IP=(192.168.37.26 192.168.37.27 192.168.37.28)
+MASTER_IP=(192.168.37.31)
+WORKER_IP=(192.168.37.32 192.168.37.33)
 
 ## Network configuration variables. Hostnames you want to configure on target nodes. Even if you already configured hostname, put the configured hostnames here and skip the hostname configuration function.
 MGMT="caasp-lb"
 DOMAIN="example.com" # DOMAIN name for this lab. 
 MGMT_FQDN="$MGMT.$DOMAIN" #This is also FQDN of registry
-MASTER=(caasp-master1 caasp-master2 caasp-master3)
-WORKER=(caasp-worker1 caasp-worker2 caasp-worker3)
+MASTER=(caasp-master1)
+WORKER=(caasp-worker1 caasp-worker2)
 
 ## Functionis Configuration variables : Variables which are used by functions
 DNS_SERVER="168.126.63.1"
@@ -39,10 +39,12 @@ MONITORING=(monitoring prometheus prometheus-alertmanager grafana)
 ## The exsiting ceph cluster information.
 STORAGECLASS="ceph-rbd"
 CEPH_PORT="6789"
-CEPH_ADMIN_IP="192.168.37.75"
-CEPH_MONITOR_IP_PORT1="192.168.37.78:$CEPH_PORT"
-CEPH_MONITOR_IP_PORT2="192.168.37.76:$CEPH_PORT"
-CEPH_MONITOR_IP_PORT2="192.168.37.77:$CEPH_PORT"
+CEPH_ADMIN_IP="192.168.37.25"
+CEPH_MONITOR_IP_PORT1="192.168.37.26:$CEPH_PORT"
+CEPH_MONITOR_IP_PORT2="192.168.37.27:$CEPH_PORT"
+CEPH_MONITOR_IP_PORT2="192.168.37.28:$CEPH_PORT"
+## SAP related
+SAPDHNAMESPACE="datahub27"
 
 ######################
 ## USER jobs Ends   ##
@@ -380,6 +382,8 @@ Debug systemctl enable chronyd
 
 Initialize_the_cluster_on_Management() {
 Debug zypper --non-interactive in -t pattern SUSE-CaaSP-Management
+## SAP
+Debug zypper --non-interactive in -f skuba-1.1.2-3.6.1
 ## skuba cluster init --control-plane <LB IP/FQDN> <cluster name>
 Debug skuba cluster init --control-plane $LB_IP my-cluster
 }
@@ -392,7 +396,7 @@ Debug skuba -v 5 node bootstrap --user sles --sudo --target \${MASTER[0]}.$DOMAI
 Setup_kubectl_on_Management () {
 Debug zypper --non-interactive in kubernetes-client;
 mkdir -p ~/.kube;
-Debug ln -s ~/my-cluster/admin.conf ~/.kube/config
+Debug ln -s -f ~/my-cluster/admin.conf ~/.kube/config
 }
 
 
@@ -1967,6 +1971,25 @@ location = "$MGMT_FQDN"
 [[registry]]
 prefix = "registry.opensuse.org/kubic"
 location = "$MGMT_FQDN/caasp/v4"
+
+#[[registry]]
+#prefix = "registry.suse.com"
+#location = "registry01.mydomain.local:5000/registry.suse.com"
+#[[registry]]
+#prefix = "docker.io"
+#location = "registry01.mydomain.local:5000/docker.io"
+#[[registry]]
+#prefix = "docker.io/library"
+#location = "registry01.mydomain.local:5000/docker.io"
+#[[registry]]
+#prefix = "quay.io"
+#location = "registry01.mydomain.local:5000/quay.io"
+#[[registry]]
+#prefix = "k8s.gcr.io"
+#location = "registry01.mydomain.local:5000/k8s.gcr.io"
+#[[registry]]
+#prefix = "gcr.io"
+#location = "registry01.mydomain.local:5000/gcr.io"
 EOF
 
 if [[ \$(systemctl list-unit-files | grep crio.service) =~ "crio" ]]; then 
@@ -1993,11 +2016,114 @@ Debug systemctl start haproxy
 Debug screen -dm helm serve --repo-path $froLOCAL_REPO_DIR/helm_local_repo --address $MGMT_FQDN:9001
 }
 
-Test_on_Management () {
-Debug echo "test"
-Debug_print echo "print"
-echo "print"
+
+## SAP related
+SAPDHConfiguration1_on_CaaSP () {
+# Packages for storage
+Debug zypper --non-interactive in xfsprogs ceph-common
+
+# Pids_limit = 8192 on CaaSP
+Debug sed -i 's/pids_limit = 1024/pids_limit = 8192/g' /etc/crio/crio.conf
+
+# Edit registry.conf on CaaSP
+Debug_print 'Modify /etc/containers/registries.conf'
+cat << EOF >> /etc/containers/registries.conf
+[["$MGMT_FQDN:5000"]]
+insecure = false
+prefix = "$MGMT_FQDN:5000"
+location = "$MGMT_FQDN"
+EOF
+
+Debug systemctl restart crio
+
 }
+
+SAPDHConfiguration2_on_Management () {
+
+# zypper in python2-pyOpenSSL on Management
+Debug zypper --non-interactive in docker python2-PyYAML python2-pyOpenSSL
+
+# create namespace for datahub27 on Management
+Debug kubectl create namespace $SAPDHNAMESPACE
+
+# Pod Security Policy on Management
+#sed -i 's+pathPrefix: /opt/kubernetes-hostpath-volumes+pathPrefix: /+g' ~/my-cluster/addons/psp/psp.yaml
+#Debug kubectl apply -f ~/my-cluster/addons/psp/psp.yaml
+
+Debug_print "Add texts at the end below of 'kubectl edit psp suse.caasp.psp.privileged'" 
+
+cat << EOF >&1
+  allowedHostPaths:
+  - pathPrefix: /
+EOF
+
+local INGRESS_NAMESPACE=\$(kubectl get pods -o wide --all-namespaces | awk '{if(\$2~/^nginx-ingress/) NAMESPACE=\$1  } END{ print NAMESPACE }')
+local INGRESS_SA=\$(kubectl get -n nginx-ingress  serviceaccounts -lapp=nginx-ingress -o name | awk -F/ '{print \$2}')
+
+# Role binding with service account
+Debug_print "Clusterrole binding with new psp"
+kubectl -n kube-system apply -f - << EOF 
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: suse:caasp:psp:priviliged:default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: suse:caasp:psp:privileged
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: $SAPDHNAMESPACE
+- kind: ServiceAccount
+  name: vora-vsystem-$SAPDHNAMESPACE
+  namespace: $SAPDHNAMESPACE
+- kind: ServiceAccount
+  name: vora-vsystem-$SAPDHNAMESPACE-vrep
+  namespace: $SAPDHNAMESPACE
+- kind: ServiceAccount
+  name: $SAPDHNAMESPACE-elasticsearch
+  namespace: $SAPDHNAMESPACE
+- kind: ServiceAccount
+  name: $SAPDHNAMESPACE-fluentd
+  namespace: $SAPDHNAMESPACE
+- kind: ServiceAccount
+  name: $SAPDHNAMESPACE-nodeexporter
+  namespace: $SAPDHNAMESPACE
+- kind: ServiceAccount
+  name: vora-vflow-server
+  namespace: $SAPDHNAMESPACE
+- kind: ServiceAccount
+  name: \$INGRESS_SA
+  namespace: \$INGRESS_NAMESPACE
+EOF
+
+
+Debug_print "Add texts below at the end of 'kubectl edit clusterrolebinding system:node' "
+
+cat << EOF >&1
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: Group
+  name: system:nodes
+EOF
+
+## This can be done if new ingress controller deployed after SAP DH deployment
+# psp rolebinding for ingress controller 
+#local INGRESS_NAMESPACE=\$(kubectl get pods -o wide --all-namespaces | awk '{if(\$2~/^nginx-ingress/) NAMESPACE=\$1  } END{ print NAMESPACE }')
+#local INGRESS_SA=\$(kubectl get -n nginx-ingress  serviceaccounts -lapp=nginx-ingress -o name | awk -F/ '{print \$2}')
+
+#Debug_print "Add texts below at the end of 'kubectl edit clusterrolebinding  suse:caasp:psp:priviliged:default'"
+#cat << EOF >&1
+#- kind: ServiceAccount
+#  name: \$INGRESS_SA
+#  namespace: \$INGRESS_NAMESPACE
+#EOF
+
+
+
+}
+
 
 Test_on_All () {
 Debug echo "test"
@@ -2108,6 +2234,11 @@ Debug echo "test"
 #AirgappedTarBallDeployment_on_Management
 #DeployRepositories_on_Management
 
+## Configuration for SAP DH/DI : SAP note 2865345
+#SAPDHConfiguration1_on_CaaSP
+#SAPDHConfiguration2_on_Management
+
+
 ## The functions in WIP
 ## Update nodes
 ## 0. OS manual update configuration
@@ -2207,6 +2338,6 @@ do
 
 done;
 
-rm -f /tmp/$freGENERATED_SCRIPT;
+#rm -f /tmp/$freGENERATED_SCRIPT;
 echo "================ALL_Done==================";
 ## SCP_RUN Framework Ends    ##
