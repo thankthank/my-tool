@@ -2010,7 +2010,7 @@ Debug docker start suse-registry
 Debug ip addr add $LB_IP/24 dev eth0 brd +
 
 # Start load Balancer
-Debug systemctl start haproxy
+Debug docker start haproxy
 
 # Start helm serve
 Debug screen -dm helm serve --repo-path $froLOCAL_REPO_DIR/helm_local_repo --address $MGMT_FQDN:9001
