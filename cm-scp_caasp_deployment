@@ -44,7 +44,7 @@ CEPH_MONITOR_IP_PORT1="192.168.37.26:$CEPH_PORT"
 CEPH_MONITOR_IP_PORT2="192.168.37.27:$CEPH_PORT"
 CEPH_MONITOR_IP_PORT2="192.168.37.28:$CEPH_PORT"
 ## SAP related
-SAPDHNAMESPACE="datahub27"
+SAPDHNAMESPACE="di30"
 
 ######################
 ## USER jobs Ends   ##
@@ -382,8 +382,12 @@ Debug systemctl enable chronyd
 
 Initialize_the_cluster_on_Management() {
 Debug zypper --non-interactive in -t pattern SUSE-CaaSP-Management
-## SAP
+
+## SAP. CaaSP 4.0 needs to be installed for SAP.
 Debug zypper --non-interactive in -f skuba-1.1.2-3.6.1
+
+## Manually configure LB ip in master1 if there is no LB
+
 ## skuba cluster init --control-plane <LB IP/FQDN> <cluster name>
 Debug skuba cluster init --control-plane $LB_IP my-cluster
 }
@@ -405,7 +409,7 @@ Addtional_node_on_Management() {
 local ROLE=\$1;
 if [[ \$ROLE != "master" && \$ROLE != "worker" ]];then Debug echo "Input role as master or worker";return 1;fi;
 local HOST=\$2
-if [[ \$HOST == "" ]];then Debug echo "Input parameter";return 1;fi;
+if [[ \$HOST == "" ]];then Debug echo "HOST :  \$HOST";Debug echo "Input parameter";return 1;fi;
 
 echo Addtional Node
 cd ~/my-cluster;eval "\$(ssh-agent)";ssh-add /home/sles/.ssh/id_rsa;
@@ -620,7 +624,7 @@ spec:
           args:
             - --auto-generate-certificates
             - --namespace=kubernetes-dashboard
-          # - --enable-skip-login
+            - --enable-skip-login
             - --enable-insecure-login
             - --disable-settings-authorizer
             # Uncomment the following line to manually specify Kubernetes API server Host
@@ -1063,7 +1067,7 @@ EOF
 Debug mkdir -p /var/lib/docker/registry
 
 Debug docker load -i $froLOCAL_REPO_DIR/docker_images_file/registry.2.6.2.tar
-Debug docker container run -d -p 443:5000 --name suse-registry -v /etc/docker_registry:/etc/docker/registry -v /var/lib/docker/registry:/var/lib/registry registry.suse.com/sles12/registry:2.6.2
+Debug docker container run -d -p 443:5000 --restart=always --name suse-registry -v /etc/docker_registry:/etc/docker/registry -v /var/lib/docker/registry:/var/lib/registry registry.suse.com/sles12/registry:2.6.2
 
 #Debug docker container run -d --restart=always -p 5000:443 --name registry -v /var/lib/docker/registry:/var/lib/registry -v /var/lib/docker/certs:/certs -e REGISTRY_HTTP_ADDR=0.0.0.0:443 -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/monitoring_crt.pem -e REGISTRY_HTTP_TLS_key=/crts/monitoring_key.pem registry.suse.com/sles12/registry:2.6.2
 }
@@ -1337,6 +1341,70 @@ StratosDeployment_on_Management () {
 Debug helm install localcharts/console --name stratos-console --namespace monitoring --values $froLOCAL_REPO_DIR/helm_conf/stratos-values.yaml
 
 }
+
+LoadbalancerDeploymentforS3_on_Management () {
+
+local S3FQDN="s3gw.sapdemo.lab"
+local LB_IP="192.168.200.123"	
+
+## Self signed certificate
+Debug openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /tmp/s3tls.key -out /tmp/s3tls.crt -subj "/CN=\$S3FQDN"
+cat /tmp/s3tls.crt /tmp/s3tls.key | tee /tmp/s3tls.pem 
+# Remove DOS-type carraige return
+tr -d '\r' < /tmp/s3tls.crt > /tmp/s3tls.pem
+Debug echo "Upload the cert, /tmp/s3tls.pem, for s3 gateway to DI connection management!!"
+
+Debug cp /tmp/s3tls.pem /etc/docker_haproxy/
+
+#Debug docker container rm -f haproxy;
+
+mkdir -p /etc/docker_haproxy
+cat << EOF > /etc/docker_haproxy/haproxy.cfg
+global
+#Disable log below after you debug haproxy
+#  log /dev/log local0 info
+  daemon
+
+defaults
+  log     global
+  mode    tcp
+  option  tcplog
+  option  redispatch
+  option  tcpka
+  option  dontlognull
+  retries 2
+  maxconn 2000
+  timeout connect   5s
+  timeout client    5s
+  timeout server    5s
+  timeout tunnel    86400s
+
+frontend s3gateway
+    bind :7490 ssl crt /etc/haproxy/s3tls.pem
+    mode http
+    timeout client 5s
+    default_backend s3gateway
+
+backend s3gateway
+    mode http
+    balance roundrobin
+    option forwardfor
+    option httpchk HEAD / HTTP/1.1\r\nHost:localhost
+    server ses1 192.168.200.111:7480 check
+    http-request set-header X-Forwarded-Port %[dst_port]
+    http-request add-header X-Forwarded-Proto https if { ssl_fc }
+    
+
+EOF
+
+docker load -i $froLOCAL_REPO_DIR/docker_images_file/haproxy.1.8.tar
+docker run -d -p 7490:7490  --name haproxy -v /etc/docker_haproxy/s3tls.pem:/etc/haproxy/s3tls.pem  -v /etc/docker_haproxy/haproxy.cfg:/etc/haproxy/haproxy.cfg haproxy:1.8 -f /etc/haproxy/haproxy.cfg
+
+ip addr add \$LB_IP/24 dev br0 brd +
+
+}
+
+
 
 LoadbalancerDeployment_on_Management () {
 
@@ -2094,6 +2162,9 @@ subjects:
   name: vora-vflow-server
   namespace: $SAPDHNAMESPACE
 - kind: ServiceAccount
+  name: mlf-deployment-api
+  namespace: $SAPDHNAMESPACE
+- kind: ServiceAccount
   name: \$INGRESS_SA
   namespace: \$INGRESS_NAMESPACE
 EOF
@@ -2123,6 +2194,106 @@ EOF
 
 
 }
+
+SAPDHConfiguration3_on_Management () {
+
+## Configure for private registry certificates
+Debug cp /etc/docker_registry/certs/monitoring_crt2.pem /etc/docker_registry/certs/cert_with_carriage_return
+tr -d '\r' < /etc/docker_registry/certs/cert_with_carriage_return > /etc/docker_registry/certs/cert
+kubectl create secret generic cmcertificates --from-file=/etc/docker_registry/certs/cert -n $SAPDHNAMESPACE
+
+## This can be done if new ingress controller deployed after SAP DH deployment
+# psp rolebinding for ingress controller 
+local INGRESS_NAMESPACE=\$(kubectl get pods -o wide --all-namespaces | awk '{if(\$2~/^nginx-ingress/) NAMESPACE=\$1  } END{ print NAMESPACE }')
+local INGRESS_SA=\$(kubectl get -n nginx-ingress  serviceaccounts -lapp=nginx-ingress -o name | awk -F/ '{print \$2}')
+
+Debug_print "Add texts below at the end of 'kubectl edit clusterrolebinding  suse:caasp:psp:priviliged:default'"
+cat << EOF >&1
+- kind: ServiceAccount
+  name: \$INGRESS_SA
+  namespace: \$INGRESS_NAMESPACE
+EOF
+
+local CEPH_SECRET=\$(ceph auth get-key client.admin)
+Debug_print kubectl -n $SAPDHNAMESPACE apply for ceph-secret-admin
+kubectl -n $SAPDHNAMESPACE apply -f - << EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ceph-secret-admin
+  namespace: $SAPDAHNAMESPACE
+type: "kubernetes.io/rbd"
+data:
+  key: "\$(echo \$CEPH_SECRET | base64)"
+EOF
+
+local CEPH_USER="caaspuserdemo"
+local USER_SECRET=\$(ceph auth get-key client.\$CEPH_USER)
+## user for DI30
+Debug_print kubectl -n $SAPDHNAMESPACE apply for ceph-secret-user
+kubectl -n  $SAPDHNAMESPACE apply -f - << EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ceph-secret-user
+  namespace: $SAPDAHNAMESPACE
+type: "kubernetes.io/rbd"
+data:
+  key: "\$(echo \$USER_SECRET | base64)"
+EOF
+
+}
+
+Ingress_vsystem_on_Management() {
+## Prerequesite
+## Ingress controller is already deployed and working
+local DIFQDN="di.pntdemo.kr"
+local SAPDHNAMESPACE="di30"
+## Self signed certificate
+#Debug openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /tmp/tls.key -out /tmp/tls.crt -subj "/CN=\$DIFQDN"
+
+## create secret for the certificate
+#Debug kubectl -n $SAPDHNAMESPACE create secret tls vsystem-tls-certs --key /tmp/tls.key --cert /tmp/tls.crt
+
+
+## Create ingress
+Debug_print "kubectl apply"
+kubectl -n $SAPDHNAMESPACE apply -f - << EOF
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+ name: vsystem
+ annotations:
+   kubernetes.io/ingress.class: nginx
+   nginx.ingress.kubernetes.io/secure-backends: "true"
+   nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+   nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+   nginx.ingress.kubernetes.io/proxy-body-size: "500m"
+   nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+   nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
+   nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+   nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+   nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+spec:
+ tls:
+ - hosts:
+   - \$DIFQDN
+   secretName: vsystem-tls-certs
+ rules:
+ - host: \$DIFQDN
+   http:
+     paths:
+     - path: /
+       backend:
+         serviceName: vsystem
+         servicePort: 8797
+
+EOF
+
+Debug "echo Try to access vsystem service at https://\$DIFQDN:30443"
+
+}
+
 
 
 Test_on_All () {
@@ -2169,7 +2340,7 @@ Debug echo "test"
 #Chrony_for_ntp_server_on_Management
 #Chrony_for_ntp_client_on_CaaSP
 
-## CaaSP deployment
+### CaaSP deployment
 ## sles user creation for skuba
 #CreateUserWithKeyAccess_on_All
 
@@ -2234,9 +2405,13 @@ Debug echo "test"
 #AirgappedTarBallDeployment_on_Management
 #DeployRepositories_on_Management
 
-## Configuration for SAP DH/DI : SAP note 2865345
+### Configuration for SAP DH/DI : SAP note 2865345
 #SAPDHConfiguration1_on_CaaSP
 #SAPDHConfiguration2_on_Management
+#SAPDHConfiguration3_on_Management
+#Ingress_vsystem_on_Management
+#LoadbalancerDeploymentforS3_on_Management 
+
 
 
 ## The functions in WIP
@@ -2338,6 +2513,6 @@ do
 
 done;
 
-#rm -f /tmp/$freGENERATED_SCRIPT;
+rm -f /tmp/$freGENERATED_SCRIPT;
 echo "================ALL_Done==================";
 ## SCP_RUN Framework Ends    ##
