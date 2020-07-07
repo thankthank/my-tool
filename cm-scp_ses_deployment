@@ -92,7 +92,7 @@ SES_IP_TOTAL=(${SES_IP_TOTAL[@]})
 Debug () {
 echo;echo;echo;echo;
 echo '(('CMD'))' "\$@" | tee -a $froLOGFILE
-#while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ \$INPUT == "y" ]];then  break;fi;done
+while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ \$INPUT == "y" ]];then  break;fi;done
 echo '(('OUTPUT-Started:\$(date +%FT%H:%M:%S)'))' | tee -a $froLOGFILE
 "\$@" | tee -a $froLOGFILE
 echo '(('OUTPUT-Done:\$(date +%FT%H:%M:%S)'))' | tee -a $froLOGFILE
@@ -104,7 +104,7 @@ echo;echo;echo;echo;
 # Use single quote in Single quote
 # Debug_print $'echo \'ls -al\' | grep tt '
 echo '(('CMD_print'))' "\$@" | tee -a $froLOGFILE
-#while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ \$INPUT == "y" ]];then  break;fi;done
+while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ \$INPUT == "y" ]];then  break;fi;done
 echo '(('OUTPUT:\$(date +%FT%H:%M:%S)'))' | tee -a $froLOGFILE
 }
 
@@ -259,8 +259,8 @@ Debug zypper --non-interactive up --no-recommends kernel-default
 #Debug update-ca-certificates;
 
 ## CPU and Memory account in systemd for all
-cat /etc/systemd/system.conf | grep ^'DefaultCPUAccounting=yes' || echo 'DefaultCPUAccounting=yes' >> /etc/systemd/system.conf
-cat /etc/systemd/system.conf | grep ^'DefaultMemoryAccounting=yes' || echo 'DefaultMemoryAccounting=yes' >> /etc/systemd/system.conf 
+#cat /etc/systemd/system.conf | grep ^'DefaultCPUAccounting=yes' || echo 'DefaultCPUAccounting=yes' >> /etc/systemd/system.conf
+#cat /etc/systemd/system.conf | grep ^'DefaultMemoryAccounting=yes' || echo 'DefaultMemoryAccounting=yes' >> /etc/systemd/system.conf 
 
 ## Uniqueue Machine ID for all
 Debug rm -f /etc/machine-id
@@ -367,8 +367,11 @@ Debug salt-key -F
 Debug salt-key --accept-all
 
 ## This configuration disappears after reboot.
-Debug salt '*' grains.append deepsea default
-Debug salt -G 'deepsea:*' test.ping
+Debug_print salt '*' grains.append deepsea default
+salt '*' grains.append deepsea default
+Debug_print salt -G 'deepsea:*' test.ping
+salt -G 'deepsea:*' test.ping
+
 
 }
 
@@ -479,7 +482,9 @@ Debug salt '*' pillar.items
 
 Stage3_on_Management () {
 
-Debug salt-run state.orch ceph.stage.3 
+Debug salt-run state.orch ceph.stage.3
+# Configure prometheus export to export RBD metrics
+Debug ceph config set mgr mgr/prometheus/rbd_stats_pools caasp-demo 
 Debug ceph -s
 
 ## Ceph Manager
@@ -518,11 +523,48 @@ Debug ceph osd pool set pool-general size 1
 #Debug ceph tell mon.* injectargs --mon-allow-pool-delete=true
 #Debug ceph osd pool delete pool-test pool-test --yes-i-really-really-mean-it
 
+## Pool management for RGW
+
+# rgw size change
+#for i in .rgw.root default.rgw.control default.rgw.log default.rgw.meta default.rgw.buckets.data default.rgw.buckets.index 
+#do
+#	Debug ceph osd pool set \$i min_size 1;
+#	Debug ceph osd pool set \$i size 2;
+#done
+
+# PG
+#Debug ceph osd pool set default.rgw.buckets.index pg_num 32
+#Debug ceph osd pool set default.rgw.buckets.index pgp_num 32
+#Debug ceph osd pool set default.rgw.buckets.data pg_num 512
+#Debug ceph osd pool set default.rgw.buckets.data pgp_num 512
+
+
+
+
 ## RBD Creation and map
 #Debug rbd -p pool-test create testrbd --size 10240 
 #Debug rbd -p pool-test ls
 #Debug rbd map pool-test/testrbd
 #Debug rbd unmap pool-test/testrbd
+
+}
+
+RadosManagement_on_Management () {
+
+echo ;
+local ADMIN="s3admin"
+local HOSTNAME="ses1.sapdemo.lab"
+## User creation
+Debug radosgw-admin user create --uid=\$ADMIN  --display-name=\$ADMIN --system
+
+## ceph dashboard setting
+#local ACCESS_KEY2='Please input value from the command above'
+#local SECRET_KEY2='Please input value from the command above'
+Debug ceph dashboard set-rgw-api-access-key \$ACCESS_KEY2
+Debug ceph dashboard set-rgw-api-secret-key \$SECRET_KEY2
+Debug ceph dashboard set-rgw-api-host \$HOSTNAME
+ceph dashboard set-rgw-api-port 7480
+
 
 }
 
@@ -615,6 +657,8 @@ ls
 
 ## SES Operation
 #PoolRbdmanagement_on_Management
+#RadosManagement_on_Management
+
 
 ## Etc
 #Test_on_All
