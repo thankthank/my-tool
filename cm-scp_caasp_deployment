@@ -2405,7 +2405,7 @@ Debug echo "test"
 #AirgappedTarBallDeployment_on_Management
 #DeployRepositories_on_Management
 
-### Configuration for SAP DH/DI : SAP note 2865345
+### Configuration for SAP DH/DI : SAP note 2898735
 #SAPDHConfiguration1_on_CaaSP
 #SAPDHConfiguration2_on_Management
 #SAPDHConfiguration3_on_Management
