@@ -4,6 +4,27 @@
 ## And the function name itself start with Capital character. So if the function name is 'wait', the total function name is mylib_Wait ()
 
 
+# Libraries which use Framework values
+Debug () {
+echo;echo;echo;echo;
+echo '(('CMD'))' "$@" | tee -a $froLOGFILE
+while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ $INPUT == "y" ]];then  break;fi;done
+echo '(('OUTPUT-Started:$(date +%FT%H:%M:%S)'))' | tee -a $froLOGFILE
+"$@" | tee -a $froLOGFILE
+echo '(('OUTPUT-Done:$(date +%FT%H:%M:%S)'))' | tee -a $froLOGFILE
+}
+
+Debug_print () {
+echo;echo;echo;echo;
+# Only print Command and no OUTPUT. It will be used commands which include terminator such as ;, >, ||
+# Use single quote in Single quote
+# Debug_print $'echo \'ls -al\' | grep tt '
+echo '(('CMD_print'))' "$@" | tee -a $froLOGFILE
+while true;do echo -n "Input 'y' and 'Enter' to continue this command.....";read INPUT; if [[ $INPUT == "y" ]];then  break;fi;done
+echo '(('OUTPUT:$(date +%FT%H:%M:%S)'))' | tee -a $froLOGFILE
+}
+
+
 mylib_Wait () {
 	local DEFAULT_SEC="10"
 	if [[ $1 == "" ]];then DEFAULT_SEC="10";
