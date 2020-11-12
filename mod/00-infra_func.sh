@@ -38,13 +38,17 @@ Debug SUSEConnect --url http://smt.suse -p ses/7/x86_64
 
 MyToolDeployment () {
 
-for i in cm- cm-scp;
-do ln -sf $froLOCAL_REPO_DIR/my-tool/$i $fre_MY_TOOL_INSTALLED_DIR/$i
-done;
-
+if [[ -a $froLOCAL_REPO_DIR/my-tool/cm- ]]
+then
+	Debug echo "my-tool deployed"
+else
+	for i in cm- cm-scp;
+	do ln -sf $froLOCAL_REPO_DIR/my-tool/$i $fre_MY_TOOL_INSTALLED_DIR/$i
+	done;
+fi
 ## Hostlist generation
 echo "## Others Nodes" > ~/hostlist;
-for i in ${GRP4[@]};
+for i in ${GRP2[@]};
 do
 	echo $i >> ~/hostlist	
 done;
@@ -169,11 +173,31 @@ Debug systemctl restart network
 }
 
 Chrony_for_ntp_server () {
-Debug sed -i "s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g" /etc/chrony.conf
+
+
+RESULT=$(rpm -qa | grep chrony)
+
+if [[ $RESULT == "" ]]; then Debug zypper in -y chrony; 
+else Debug echo "chrony is already installed" 
+fi;
+
+## Local ntp server without internet
+#Debug sed -i "s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g" /etc/chrony.conf
+#Debug sed -i "s+#allow 192.168.0.0/16+allow $NTP_CLIENT_NET+g" /etc/chrony.conf
+#Debug sed -i "s/#local stratum 10/local stratum 10/g" /etc/chrony.conf
+#Debug systemctl restart chronyd
+#Debug systemctl enable chronyd
+
+## Local ntp server with internet
+#Debug sed -i "s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g" /etc/chrony.conf
 Debug sed -i "s+#allow 192.168.0.0/16+allow $NTP_CLIENT_NET+g" /etc/chrony.conf
-Debug sed -i "s/#local stratum 10/local stratum 10/g" /etc/chrony.conf
+#Debug sed -i "s/#local stratum 10/local stratum 10/g" /etc/chrony.conf
 Debug systemctl restart chronyd
 Debug systemctl enable chronyd
+
+
+
+
 }
 
 Chrony_for_ntp_client () {
