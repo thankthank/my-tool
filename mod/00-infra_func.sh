@@ -30,7 +30,7 @@ Debug ./register_client.sh $MGMT_IP
 RegistertoSMT () {
 
 echo '192.168.37.17 smt.suse smt' >> /etc/hosts	
-#Debug SUSEConnect --url http://smt.suse
+Debug SUSEConnect --url http://smt.suse
 Debug SUSEConnect --url http://smt.suse -p ses/7/x86_64
 
 }
@@ -38,7 +38,7 @@ Debug SUSEConnect --url http://smt.suse -p ses/7/x86_64
 
 MyToolDeployment () {
 
-if [[ -a $froLOCAL_REPO_DIR/my-tool/cm- ]]
+if [[ -a $fre_MY_TOOL_INSTALLED_DIR/cm- ]]
 then
 	Debug echo "my-tool deployed"
 else
@@ -139,7 +139,7 @@ sync;
 NetworkInterfaceAndHostname () {
 
 # Configure hostname
-IP_HERE=$(ip addr show dev eth0 | grep global | head -1 | awk -F/ '{print $1}' | awk '{print $2}')
+IP_HERE=$(ip addr show dev ${ETH_INTERFACE} | grep global | head -1 | awk -F/ '{print $1}' | awk '{print $2}')
 
 ## The first hostname set
 j=${#IP_TOTAL[@]}
@@ -155,7 +155,7 @@ done
 
 
 # Configure IP
-cat << EOF > /etc/sysconfig/network/ifcfg-eth0
+cat << EOF > /etc/sysconfig/network/ifcfg-$ETH_INTERFACE
 BOOTPROTO='static'
 BROADCAST=''
 ETHTOOL_OPTIONS=''
@@ -166,7 +166,6 @@ NETMASK=''
 NETWORK=''
 REMOTE_IPADDR=''
 STARTMODE='auto'
-DHCLIENT_SET_DEFAULT_ROUTE='yes'
 EOF
 Debug systemctl restart network
 
