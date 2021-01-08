@@ -2,16 +2,25 @@
 
 #### IP and Hostname configuration
 ## IP addresses which are configured on target nodes. 
-MGMT_IP=(192.168.37.13) #Mapped to GRP1
-MON_IP=(192.168.37.10 192.168.37.12 192.168.37.11) #Mapped to GRP2
-OSD_IP=(192.168.37.10 192.168.37.12 192.168.37.11) #Mapped to GRP3
+MGMT_IP=(192.168.37.60) #Mapped to GRP1
+MON_IP=(192.168.37.61 192.168.37.62 192.168.37.63) #Mapped to GRP2
+OSD_IP=(192.168.37.61 192.168.37.62 192.168.37.63 192.168.37.64) #Mapped to GRP3
+NEW_IP=(192.168.37.64) #Mapped to GRP5
+SMB_IP=(192.168.37.63) #Mapped to GRP6
+ISCSI_IP=(192.168.37.62 192.168.37.64) #Mapped to GRP7
+RGW=(192.168.37.63) #Mapped to GRP8
 
 ## Network configuration variables. Hostnames you want to configure on target nodes. Even if you already configured hostname, put the configured hostnames here and skip the hostname configuration function.
-MGMT="ses1-admin"
+MGMT="ses-admin"
 DOMAIN="example.com" # DOMAIN name for this lab. 
 MGMT_FQDN="$MGMT.$DOMAIN" #This is also FQDN of registry
-MON=(ses2 ses3 ses4)
-OSD=(ses2 ses3 ses4)
+MON=(ses-1 ses-2 ses-3)
+OSD=(ses-1 ses-2 ses-3 ses-new)
+NEW=(ses-new)
+SMB=(ses-3)
+ISCSI=(ses-2 ses-new)
+RGW=(ses-3)
+ETH_INTERFACE="eth0"
 
 ## Hostname and IP aggregation
 HOSTNAME_TOTAL=()
