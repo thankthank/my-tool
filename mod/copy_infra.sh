@@ -1,15 +1,16 @@
 #!/bin/bash
 
 
-if [[ $1 == "" ]];then 
-	echo Please Enter parameter $1;
-	exit 1;
+if (( ${#@} != 2 )); then
+	echo Please Enter two parameters;
+	exit 1
 fi
 
 PRODUCT=$1
+SCRIPTNUM=$2
 
 INFRAORG=(main target_mapping env )
 for i in ${INFRAORG[@]};
 do
-	cp 99-infra_$i 00-infra_${PRODUCT}_$i.sh
+	cp 99-infra_$i $2-infra_${PRODUCT}_$i.sh
 done

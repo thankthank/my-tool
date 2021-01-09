@@ -36,6 +36,7 @@ Debug SUSEConnect --url http://smt.suse -p ses/7/x86_64
 }
 
 
+
 MyToolDeployment () {
 
 if [[ -a $fre_MY_TOOL_INSTALLED_DIR/cm- ]]
