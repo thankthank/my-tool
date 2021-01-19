@@ -31,7 +31,8 @@ RegistertoSMT () {
 
 echo '192.168.37.17 smt.suse smt' >> /etc/hosts	
 Debug SUSEConnect --url http://smt.suse
-Debug SUSEConnect --url http://smt.suse -p ses/7/x86_64
+#Debug SUSEConnect --url http://smt.suse -p ses/7/x86_64
+Debug SUSEConnect --url http://smt.suse -p sle-ha/15.2/x86_64
 
 }
 
@@ -140,7 +141,6 @@ sync;
 NetworkInterfaceAndHostname () {
 
 # Configure hostname
-IP_HERE=$(ip addr show dev ${ETH_INTERFACE} | grep global | head -1 | awk -F/ '{print $1}' | awk '{print $2}')
 
 ## The first hostname set
 j=${#IP_TOTAL[@]}

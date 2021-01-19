@@ -6,7 +6,7 @@ GRP0=() #CHANGEME
 j=${#GRP0[@]};for i in "${PRIMARY_IP[@]}";do GRP0[$j]=$i; ((j=j+1));done; 
 j=${#GRP0[@]};for i in "${SECONDARY_IP[@]}";do GRP0[$j]=$i; ((j=j+1));done; 
 GRP1=() #CHANGEME
-GRP1[0]=MGMT_IP
+GRP1[0]=$MGMT_IP
 GRP2=() #CHANGEME
 j=${#GRP2[@]};for i in "${OTHERS_IP[@]}";do GRP2[$j]=$i; ((j=j+1));done; 
 GRP3=() #CHANGEME

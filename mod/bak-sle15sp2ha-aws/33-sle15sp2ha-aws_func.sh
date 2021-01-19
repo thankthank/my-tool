@@ -155,6 +155,38 @@ cat << EOF | tee /tmp/source_destination.policy
 }
 EOF
 
+echo "Route 53 Updates"
+local HOSTED_ZONE_ID=""
+local FULL_NAME="" 
+cat << EOF | tee /tmp/route53.policy
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "Stmt1471878724000",
+            "Effect": "Allow",
+            "Action": "route53:GetChange",
+            "Resource": "arn:aws:route53:::change/*"
+        },
+        {
+            "Sid": "Stmt1471878724001",
+            "Effect": "Allow",
+            "Action": "route53:ChangeResourceRecordSets",
+            "Resource": "arn:aws:route53:::hostedzone/$HOSTED_ZONE_ID/$FULL_NAME"
+        },
+        {
+            "Sid": "Stmt1471878724002",
+            "Effect": "Allow",
+            "Action": [
+                "route53:ListResourceRecordSets",
+                "route53:ChangeResourceRecordSets"
+            ],
+            "Resource": "arn:aws:route53:::hostedzone/$HOSTED_ZONE_ID"
+        }
+    ]
+}
+EOF
+
 
 }
 
@@ -371,6 +403,66 @@ primitive res_AWS_IP ocf:suse:aws-vpc-move-ip \
    op monitor interval=60 timeout=60
 EOF
 Debug crm configure load update /tmp/aws-move-ip.txt
+
+}
+
+sapHANA_crm_configuration () {
+
+cat << EOF | tee /tmp/crm-saphanatop.txt
+primitive rsc_SAPHanaTopology_${SID_UPPER}_HDB${HANA_INS_NR} ocf:suse:SAPHanaTopology \
+        op monitor interval="10" timeout="600" \
+        op start interval="0" timeout="600" \
+        op stop interval="0" timeout="300" \
+        params SID="${SID_UPPER}" InstanceNumber="${HANA_INS_NR}"
+clone cln_SAPHanaTopology_${SID_UPPER}_HDB${HANA_INS_NR} rsc_SAPHanaTopology_${SID_UPPER}_HDB${HANA_INS_NR} \
+        meta clone-node-max="1" interleave="true"
+EOF
+Debug crm configure load update /tmp/crm-saphanatop.txt
+
+
+cat << EOF | tee /tmp/crm-saphana.txt
+primitive rsc_SAPHana_${SID_UPPER}_HDB${HANA_INS_NR} ocf:suse:SAPHana \
+        op start interval="0" timeout="3600" \
+        op stop interval="0" timeout="3600" \
+        op promote interval="0" timeout="3600" \
+        op monitor interval="60" role="Master" timeout="700" \
+        op monitor interval="61" role="Slave" timeout="700" \
+        params SID="${SID_UPPER}" InstanceNumber="${HANA_INS_NR}" PREFER_SITE_TAKEOVER="true" \
+        DUPLICATE_PRIMARY_TIMEOUT="7200" AUTOMATED_REGISTER="false"
+ms msl_SAPHana_${SID_UPPER}_HDB${HANA_INS_NR} rsc_SAPHana_${SID_UPPER}_HDB${HANA_INS_NR} \
+        meta clone-max="2" clone-node-max="1" interleave="true"
+EOF
+Debug crm configure load update /tmp/crm-saphana.txt
+
+cat << EOF | tee /tmp/crm-cs.txt
+colocation col_saphana_ip_${SID_UPPER}_HDB${HANA_INS_NR} 2000: res_AWS_IP:Started \
+    msl_SAPHana_${SID_UPPER}_HDB10:Master
+order ord_SAPHana_${SID_UPPER}_HDB10 Optional: cln_SAPHanaTopology_${SID_UPPER}_HDB10 \
+    msl_SAPHana_${SID_UPPER}_HDB10
+EOF
+Debug crm configure load update /tmp/crm-cs.txt
+
+}
+
+sapHANA_crm_read-enabled () {
+## Active-active read-enabled scenario
+
+local RE_IP="10.0.0.2"
+local RE_RTB="rtb-changeme"
+cat << EOF | tee /tmp/crm-re.txt
+primitive res_AWS_IP_readenabled ocf:suse:aws-vpc-move-ip \
+   params ip=${RE_IP} routing_table=${RE_RTB} interface=${ETH_INTERFACE} profile=${AwsCli_Profile} \
+   op start interval=0 timeout=180 \
+   op stop interval=0 timeout=180 \
+   op monitor interval=60 timeout=60
+colocation col_saphana_ip_${SID_UPPER}_HDB${HANA_INS_NR}_readenabled 2000: \
+    res_AWS_IP_readenabled:Started msl_SAPHana_${SID_UPPER}_HDB${HANA_INS_NR}:Slave
+EOF
+Debug crm configure load update /tmp/crm-re.txt
+}
+
+HA_test () {
+echo ""
 
 }
 
