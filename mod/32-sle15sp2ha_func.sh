@@ -170,7 +170,7 @@ cat << EOTT | tee /tmp/pcmk_export.txt
 primitive exportfs_work \
   ocf:heartbeat:exportfs \
     params directory="/srv/nfs/work" \
-      options="rw,mountpoint" \
+      options="rw,mountpoint,no_root_squash" \
       clientspec="$HA_NFS_CLIENT" \
       wait_for_leasetime_on_stop=true \
       fsid=100 \
