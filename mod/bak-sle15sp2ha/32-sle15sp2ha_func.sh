@@ -21,6 +21,7 @@ Debug echo "iSCSI target configuration in yast"
 echo "Configure iSCSI client on each nodes"
 
 
+
 }
 
 ClusterRelatedNetworkDevice() {
@@ -41,7 +42,7 @@ echo softdog > /etc/modules-load.d/watchdog.conf
 Debug systemctl restart systemd-modules-load
 
 Debug ls -al /dev/disk/by-id
-
+Debug echo "Update env file with SBD device id"
 
 }
 
@@ -170,7 +171,7 @@ cat << EOTT | tee /tmp/pcmk_export.txt
 primitive exportfs_work \
   ocf:heartbeat:exportfs \
     params directory="/srv/nfs/work" \
-      options="rw,mountpoint" \
+      options="rw,mountpoint,no_subtree_check,no_root_quash" \
       clientspec="$HA_NFS_CLIENT" \
       wait_for_leasetime_on_stop=true \
       fsid=100 \

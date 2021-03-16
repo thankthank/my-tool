@@ -141,6 +141,7 @@ sync;
 NetworkInterfaceAndHostname () {
 
 # Configure hostname
+IP_HERE=$(ip addr show dev $ETH_INTERFACE | grep global | head -1 | awk -F/ '{print $1}' | awk '{print $2}')
 
 ## The first hostname set
 j=${#IP_TOTAL[@]}
@@ -183,15 +184,14 @@ fi;
 
 ## Local ntp server without internet
 #Debug sed -i "s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g" /etc/chrony.conf
-#Debug sed -i "s+#allow 192.168.0.0/16+allow $NTP_CLIENT_NET+g" /etc/chrony.conf
-#Debug sed -i "s/#local stratum 10/local stratum 10/g" /etc/chrony.conf
+#Debug_print $'echo "allow $NTP_CLIENT_NET" >> /etc/chrony.conf'
+#echo "allow $NTP_CLIENT_NET" >> /etc/chrony.conf
 #Debug systemctl restart chronyd
 #Debug systemctl enable chronyd
 
 ## Local ntp server with internet
-#Debug sed -i "s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g" /etc/chrony.conf
-Debug sed -i "s+#allow 192.168.0.0/16+allow $NTP_CLIENT_NET+g" /etc/chrony.conf
-#Debug sed -i "s/#local stratum 10/local stratum 10/g" /etc/chrony.conf
+Debug_print $'echo "allow $NTP_CLIENT_NET" >> /etc/chrony.conf'
+echo "allow $NTP_CLIENT_NET" >> /etc/chrony.conf
 Debug systemctl restart chronyd
 Debug systemctl enable chronyd
 
