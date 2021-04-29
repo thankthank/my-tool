@@ -9,8 +9,8 @@ fi
 PRODUCT=$1
 SCRIPTNUM=$2
 
-INFRAORG=(main target_mapping env )
+INFRAORG=(main target_mapping env func )
 for i in ${INFRAORG[@]};
 do
-	cp 99-infra_$i $2-infra_${PRODUCT}_$i.sh
+	cp 99-infra_$i $2-${PRODUCT}_$i.sh
 done
