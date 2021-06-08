@@ -75,6 +75,7 @@
 #! Add bitnami helm chart : https://charts.bitnami.com/bitnami
   #Edit helm value yaml : 
   	#volume size 
+	#replicaCount: 4
   #namespace : minio, name : minio
 #MinioPostDeployment on_GRP1
 
