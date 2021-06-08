@@ -98,7 +98,7 @@ awk  -v VHOS="/tmp/${freSCRIPT_NAME}_HosSe.t" -v VFUN="/tmp/${freSCRIPT_NAME}_fu
 	BEGIN{VEXE=0};{
 	if($0=="## Here to run") {VEXE=1;};
 	## mapping
-	if(VEXE==1 && ($0~/on_GRP0$/ || $0~/on_GRP1$/ || $0~/on_GRP2$/ || $0~/on_GRP3$/ || $0~/on_GRP4$/ || $0~/on_GRP5$/ || $0~/on_Temp$/  ) && $1 !~/^ *#/) {
+	if(VEXE==1 && ($0~/on_GRP0$/ || $0~/on_GRP1$/ || $0~/on_GRP2$/ || $0~/on_GRP3$/ || $0~/on_GRP4$/ || $0~/on_GRP5$/ || $0~/on_GRP6$/ || $0~/on_GRP7$/ || $0~/on_GRP8$/ || $0~/on_GRP9$/|| $0~/on_Temp$/  ) && $1 !~/^ *#/) {
 		print "echo "$NF" >> "VHOS;  
 		print "BA="$1";echo ${BA} >> "VFUN;  
 	};
@@ -122,6 +122,10 @@ else
 	if [[ $SCP_RUN_TARGET == "on_GRP3" ]]; then HOSTS_PRE=("${GRP3[@]}"); fi; 
 	if [[ $SCP_RUN_TARGET == "on_GRP4" ]]; then HOSTS_PRE=("${GRP4[@]}"); fi; 
 	if [[ $SCP_RUN_TARGET == "on_GRP5" ]]; then HOSTS_PRE=("${GRP5[@]}"); fi; 
+	if [[ $SCP_RUN_TARGET == "on_GRP6" ]]; then HOSTS_PRE=("${GRP6[@]}"); fi; 
+	if [[ $SCP_RUN_TARGET == "on_GRP7" ]]; then HOSTS_PRE=("${GRP7[@]}"); fi; 
+	if [[ $SCP_RUN_TARGET == "on_GRP8" ]]; then HOSTS_PRE=("${GRP8[@]}"); fi; 
+	if [[ $SCP_RUN_TARGET == "on_GRP9" ]]; then HOSTS_PRE=("${GRP9[@]}"); fi; 
 	if [[ $SCP_RUN_TARGET == "Temp" ]]; then HOSTS_PRE=("${HOSTS_TEMP[@]}");     fi; 
 fi;
 rm -f /tmp/${freSCRIPT_NAME}_HosSe.t;
