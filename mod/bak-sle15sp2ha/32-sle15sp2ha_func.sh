@@ -16,7 +16,9 @@ echo InitiatorName=iqn.1996-04.de.suse:01:$(hostname)
 
 iSCSITarget () {
 
+Debug mkdir -p /home/sbd
 Debug dd if=/dev/zero of=/home/sbd/ha-sle15sp2.sbd bs=1M count=10
+Debug zypper in -y yast2-iscsi-lio-server
 Debug echo "iSCSI target configuration in yast"
 echo "Configure iSCSI client on each nodes"
 
@@ -171,7 +173,7 @@ cat << EOTT | tee /tmp/pcmk_export.txt
 primitive exportfs_work \
   ocf:heartbeat:exportfs \
     params directory="/srv/nfs/work" \
-      options="rw,mountpoint,insecure,no_subtree_check,no_root_quash" \
+      options="rw,mountpoint,insecure,no_subtree_check,no_root_squash" \
       clientspec="$HA_NFS_CLIENT" \
       wait_for_leasetime_on_stop=true \
       fsid=100 \

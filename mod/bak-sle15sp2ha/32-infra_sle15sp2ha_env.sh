@@ -2,18 +2,18 @@
 
 #### IP and Hostname configuration
 ## IP addresses which are configured on target nodes. 
-MGMT_IP=(192.168.37.17) #Mapped to GRP1
-OTHERS_IP=(192.168.37.229 192.168.37.230) #Mapped to GRP2
-PRIMARY_IP=(192.168.37.229) #MApped to GRP3
-SECONDS_IP=(192.168.37.230) #mapped to GRP4
+MGMT_IP=(192.168.37.130) #Mapped to GRP1
+OTHERS_IP=(192.168.37.131 192.168.37.132) #Mapped to GRP2
+PRIMARY_IP=(192.168.37.131) #MApped to GRP3
+SECONDS_IP=(192.168.37.132) #mapped to GRP4
 
 ## Network configuration variables. Hostnames you want to configure on target nodes. Even if you already configured hostname, put the configured hostnames here and skip the hostname configuration function.
-MGMT="smt"
-DOMAIN="suse.su" # DOMAIN name for this lab. 
+MGMT="ha-admin"
+DOMAIN="example.com" # DOMAIN name for this lab. 
 MGMT_FQDN="$MGMT.$DOMAIN" #This is also FQDN of registry
-OTHERS=(ha-sle15sp2-1 ha-sle15sp2-2)
-PRIMARY=(ha-sle15sp2-1)
-SECONDS=(ha-sle15sp2-1)
+OTHERS=(ha-1 ha-2)
+PRIMARY=(ha-1)
+SECONDS=(ha-2)
 ETH_INTERFACE="eth0"
 
 ## Hostname and IP aggregation
@@ -31,8 +31,8 @@ HOSTS=();
 #echo "HOSTNAME_TOTAL : " ${#HOSTNAME_TOTAL[@]}" :" ${HOSTNAME_TOTAL[@]}
 
 #### Infra Functionis Configuration variables : Variables which are used by functions
-DNS_SERVER="192.168.37.17"
-GATEWAY="192.168.37.1"
+DNS_SERVER="192.168.37.130"
+GATEWAY="192.168.37.254"
 NTP_CLIENT_NET="192.168.0.0/16"
 SWAP_DEV="sda2" #If you have SWAP partition with this device, it will be removed. If you don't have SWAP partition ignore it.
 
