@@ -437,7 +437,7 @@ property \$id="cib-bootstrap-options" \
             no-quorum-policy="freeze" \
             stonith-enabled="true" \
             stonith-action="reboot" \
-            stonith-watchdog-timeout="10" \
+            stonith-watchdog-timeout="10" 
 
 op_defaults \$id="op-options" \
             timeout="600"
