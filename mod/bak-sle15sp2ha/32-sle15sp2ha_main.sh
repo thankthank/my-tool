@@ -13,7 +13,7 @@
 #HA_createDRBD on_GRP2
 #HA_createDRBDPrimary on_GRP3
 
-#HA_pcmkConfig on_GRP3
+HA_pcmkConfig on_GRP3
 
 #Temp on_GRP2
 
