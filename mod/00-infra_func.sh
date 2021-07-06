@@ -31,11 +31,11 @@ Debug ./register_client.sh $MGMT_IP
 RegistertoSMT () {
 
 #echo '192.168.37.17 smt.suse smt' >> /etc/hosts	
-#Debug SUSEConnect --url http://smt.suse
+SUSEConnect --url http://mgmt.sapdemo.lab
 #Debug SUSEConnect --url http://smt.suse -p ses/7/x86_64
 #Debug SUSEConnect --url http://smt.suse -p sle-ha/15.2/x86_64
-Debug SUSEConnect --url http://smt.suse -p sle-module-containers/15.2/x86_64
-Debug SUSEConnect --url http://smt.suse -p sle-module-desktop-applications/15.2/x86_64
+SUSEConnect --url http://mgmt.sapdemo.lab -p sle-module-containers/15.2/x86_64
+#Debug SUSEConnect --url http://mgmt.sapdemo.lab -p sle-module-desktop-applications/15.2/x86_64
 
 
 }
@@ -89,7 +89,7 @@ echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/ipv6.conf
 
 ##resolv.conf for all
 Debug sed -i "s/NETCONFIG_DNS_STATIC_SEARCHLIST=\"\"/NETCONFIG_DNS_STATIC_SEARCHLIST=\"$DOMAIN\"/g" /etc/sysconfig/network/config
-Debug sed -i "s/NETCONFIG_DNS_STATIC_SERVERS=\"\"/NETCONFIG_DNS_STATIC_SERVERS=\"$DNS_SERVER\"/g" /etc/sysconfig/network/config
+Debug sed -i "s/NETCONFIG_DNS_STATIC_SERVERS=\"8.8.8.8\"/NETCONFIG_DNS_STATIC_SERVERS=\"$DNS_SERVER\"/g" /etc/sysconfig/network/config
 
 ## Default route
 Debug_print "echo \"default $GATEWAY - -\" > /etc/sysconfig/network/routes"
@@ -190,18 +190,18 @@ else Debug echo "chrony is already installed"
 fi;
 
 ## Local ntp server without internet
-Debug sed -i "s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g" /etc/chrony.conf
-Debug sed -i "s/#local stratum 10/local stratum 10/g" /etc/chrony.conf
-Debug_print $'echo "allow $NTP_CLIENT_NET" >> /etc/chrony.conf'
-echo "allow $NTP_CLIENT_NET" >> /etc/chrony.conf
-Debug systemctl restart chronyd
-Debug systemctl enable chronyd
-
-## Local ntp server with internet
+#Debug sed -i "s/! pool pool.ntp.org iburst/#! pool pool.ntp.org iburst/g" /etc/chrony.conf
+#Debug sed -i "s/#local stratum 10/local stratum 10/g" /etc/chrony.conf
 #Debug_print $'echo "allow $NTP_CLIENT_NET" >> /etc/chrony.conf'
 #echo "allow $NTP_CLIENT_NET" >> /etc/chrony.conf
 #Debug systemctl restart chronyd
 #Debug systemctl enable chronyd
+
+## Local ntp server with internet
+Debug_print $'echo "allow $NTP_CLIENT_NET" >> /etc/chrony.conf'
+echo "allow $NTP_CLIENT_NET" >> /etc/chrony.conf
+Debug systemctl restart chronyd
+Debug systemctl enable chronyd
 
 
 
@@ -234,6 +234,8 @@ FileCopyToAll () {
 
 # This function needs to run on management
 Create_Certificate() {
+
+local S3NAME="minio"
 
 CADIR=demoCA
 rm -rf ~/cmd_cert
@@ -271,9 +273,8 @@ extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 
 [alt_names]
-DNS.1 = ${HOSTNAME_TOTAL[1]}.$DOMAIN
-DNS.2 = ${HOSTNAME_TOTAL[2]}.$DOMAIN
-DNS.3 = $MGMT.$DOMAIN
+DNS.1 = $S3NAME.$DOMAIN
+DNS.2 = $MGMT.$DOMAIN
 
 
 EOF
@@ -289,6 +290,10 @@ echo 01 > $CADIR/serial
 # Create server certificate
 Debug openssl x509 -req -CA ./demoCA/cacert.pem -CAcreateserial -CAkey ./demoCA/private/cakey.pem -in demoCA/requests/monitoring_req.pem  -out demoCA/certs/monitoring_crt.pem -days 3650 -extensions v3_req -extfile reg.cnf
 
+Debug mkdir -p /etc/docker_registry/certs
+Debug cp -v ~/cmd_cert/demoCA/certs/monitoring_crt.pem /etc/docker_registry/certs/
+Debug cp -v ~/cmd_cert/demoCA/private/monitoring_key.pem /etc/docker_registry/certs/
+
 }
 
 # This should be run on Management
@@ -299,9 +304,6 @@ Debug systemctl enable docker;
 Debug systemctl start docker;
 
 	
-Debug mkdir -p /etc/docker_registry/certs
-Debug cp -v ~/cmd_cert/demoCA/certs/monitoring_crt.pem /etc/docker_registry/certs/
-Debug cp -v ~/cmd_cert/demoCA/private/monitoring_key.pem /etc/docker_registry/certs/
 cat << EOF > /etc/docker_registry/config.yml
 version: 0.1
 log:
@@ -333,6 +335,63 @@ Debug docker container run -d -p 5000:5000 --restart=always --name suse-registry
 #Debug docker container run -d --restart=always -p 5000:443 --name registry -v /var/lib/docker/registry:/var/lib/registry -v /var/lib/docker/certs:/certs -e REGISTRY_HTTP_ADDR=0.0.0.0:443 -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/monitoring_crt.pem -e REGISTRY_HTTP_TLS_key=/crts/monitoring_key.pem registry.suse.com/sles12/registry:2.6.2
 
 }
+
+LoadbalancerDeploymentforS3 () {
+
+local S3FQDN="mgmt.sapdemo.lab"
+
+## Self signed certificate
+#Debug openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /tmp/s3tls.key -out /tmp/s3tls.crt -subj "/CN=$S3FQDN"
+cat /etc/docker_registry/certs/monitoring_crt.pem /etc/docker_registry/certs/monitoring_key.pem | tee /etc/docker_registry/certs/monitoring.pem
+Debug echo "Upload the cert, for s3 gateway to DI connection management!!"
+
+mkdir -p /etc/docker_haproxy
+Debug cp /etc/docker_registry/certs/monitoring.pem /etc/docker_haproxy/s3tls.pem
+
+Debug docker container rm -f haproxy;
+
+mkdir -p /etc/docker_haproxy
+cat << EOF > /etc/docker_haproxy/haproxy.cfg
+global
+#Disable log below after you debug haproxy
+#  log /dev/log local0 info
+    maxconn 50000
+    log /dev/log local0
+    nbproc 2
+    nbthread 4
+    cpu-map auto:1/1-4 0-3
+    ssl-default-bind-ciphers ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256
+    ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets
+
+defaults
+    timeout connect 10s
+    timeout client 30s
+    timeout server 30s
+    log global
+    mode http
+    option httplog
+    maxconn 3000
+
+frontend minio
+    bind :9443 ssl crt /etc/haproxy/s3tls.pem
+    http-request redirect scheme https unless { ssl_fc }
+    default_backend minio
+
+backend minio
+    balance roundrobin
+    cookie SERVERUSED insert indirect nocache
+    option httpchk HEAD /
+    server server1 192.168.200.105:30900 cookie server1
+    server server2 192.168.200.106:30900 cookie server2
+    server server3 192.168.200.107:30900 cookie server3
+
+EOF
+
+docker run -d -p 9443:9443  --name haproxy -v /etc/docker_haproxy/s3tls.pem:/etc/haproxy/s3tls.pem  -v /etc/docker_haproxy/haproxy.cfg:/etc/haproxy/haproxy.cfg haproxy:1.8 -f /etc/haproxy/haproxy.cfg
+
+
+}
+
 
 LoadbalancerDeployment () {
 

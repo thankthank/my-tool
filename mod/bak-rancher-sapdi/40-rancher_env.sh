@@ -2,18 +2,18 @@
 
 #### IP and Hostname configuration
 ## IP addresses which are configured on target nodes. 
-MGMT_IP=(192.168.37.101) #Mapped to GRP1
-RMS_IP=(192.168.37.102) #Mapped to GRP5
-D_MASTER_IP=(192.168.37.103) #Mapped to GRP3
-D_WORKER_IP=(192.168.37.104 192.168.37.105) #Mapped to GRP4
+MGMT_IP=(192.168.200.111) #Mapped to GRP1
+RMS_IP=(192.168.200.112) #Mapped to GRP5
+D_MASTER_IP=(192.168.200.104) #Mapped to GRP3
+D_WORKER_IP=(192.168.200.105 192.168.200.106 192.168.200.107 192.168.200.103) #Mapped to GRP4
 
 ## Network configuration variables. Hostnames you want to configure on target nodes. Even if you already configured hostname, put the configured hostnames here and skip the hostname configuration function.
-MGMT="rancher-mgmt"
-DOMAIN="example.com" # DOMAIN name for this lab. 
+MGMT="mgmt"
+DOMAIN="sapdemo.lab" # DOMAIN name for this lab. 
 MGMT_FQDN="$MGMT.$DOMAIN" #This is also FQDN of registry
-RMS=(rancher-rms)
-D_MASTER=(rancher-d-m1)
-D_WORKER=(rancher-d-w1 rancher-d-w2)
+RMS=(rms)
+D_MASTER=(master1)
+D_WORKER=(worker1 worker2 worker3 worker4)
 
 ## Hostname and IP aggregation
 HOSTNAME_TOTAL=()
@@ -30,8 +30,8 @@ HOSTS=();
 #echo "HOSTNAME_TOTAL : " ${#HOSTNAME_TOTAL[@]}" :" ${HOSTNAME_TOTAL[@]}
 
 #### Infra Functionis Configuration variables : Variables which are used by functions
-DNS_SERVER="192.168.37.17"
-GATEWAY="192.168.37.1"
+DNS_SERVER="192.168.200.111"
+GATEWAY="192.168.200.1"
 NTP_CLIENT_NET="192.168.0.0/16"
 ETH_INTERFACE="eth0"
 

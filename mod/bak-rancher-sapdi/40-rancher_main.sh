@@ -10,7 +10,7 @@
 #MyToolDeployment on_GRP1
 
 #RegisterRepositories on_GRP0
-#RegistertoSMT on_GRP0
+#RegistertoSMT on_GRP2
 #SshKnownhost on_GRP0
 
 ## Network and System Configuation functions
@@ -33,6 +33,7 @@
 #! DNSserverDeployment on Management server
 
 #Create_Certificate on_GRP1
+#Create_Certificate_S3 on_GRP1
 #Local_registry_deployment on_GRP1
 
 #LoadbalancerDeployment on_GRP1
@@ -75,12 +76,14 @@
 #! Add bitnami helm chart : https://charts.bitnami.com/bitnami
   #Edit helm value yaml : 
   	#volume size 
-	#replicaCount: 4
   #namespace : minio, name : minio
 #MinioPostDeployment on_GRP1
+#MinioHttpService on_GRP1
+#LoadbalancerDeploymentforS3 on_GRP1
 
 ## SAP Configuration
 #SAPConfig on_GRP1
+#! SAP DI deployment by SAP DI administrator
 #SAPpostinstallation on_GRP1
 
 #Developing on_GRP4

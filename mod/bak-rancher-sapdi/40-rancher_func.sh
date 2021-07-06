@@ -67,10 +67,10 @@ echo ""
 
 Kubectlsetting () {
 
-mkdir -p /root/.kube
-scp ${D_MASTER_IP[0]}:/etc/rancher/rke2/rke2.yaml /root/.kube/config
-sed -i "s/127.0.0.1/${D_MASTER_IP[0]}/g" /root/.kube/config
-Debug echo "test"
+#mkdir -p /root/.kube
+#scp ${D_MASTER_IP[0]}:/etc/rancher/rke2/rke2.yaml /root/.kube/config
+#sed -i "s/127.0.0.1/${D_MASTER_IP[0]}/g" /root/.kube/config
+#Debug echo "test"
 curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.19.8/bin/linux/amd64/kubectl
 mv kubectl /usr/bin/kubectl
 chmod 755 /usr/bin/kubectl
@@ -132,17 +132,23 @@ echo SECRET_KEY : $SECRET_KEY
 
 #kubectl port-forward --namespace minio --address 0.0.0.0 svc/minio 9000:9000
 
-local FQDN="minio.example.com"
+local FQDN="minio.sapdemo.lab"
 local NS="minio"
-openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /tmp/mintls.key -out /tmp/mintls.crt -subj "/CN=$FQDN"
-kubectl -n $NS create secret tls minio-tls-certs --key /tmp/mintls.key --cert /tmp/mintls.crt
-read;
+
+#openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /tmp/s3_tls.key -out /tmp/s3_tls.crt -subj "/CN=$FQDN"
+
+#kubectl -n $NS create secret tls minio-tls-certs --key /etc/docker_registry/certs/s3_key.pem --cert /etc/docker_registry/certs/s3_crt.pem
+#kubectl -n $NS create secret tls minio-tls-certs --key /tmp/s3_tls.key --cert /tmp/s3_tls.crt
+#read;
 kubectl -n $NS apply -f - << EOF
 apiVersion: extensions/v1beta1
+#apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   annotations:
     kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: 10240m
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
   name: minio
   namespace: $NS
 spec:
@@ -156,9 +162,9 @@ spec:
             path: /
   # This section is only required if TLS is to be enabled for the Ingress
   tls:
-      - hosts:
-          - $FQDN
-        secretName: minio-tls-certs
+    - hosts:
+      - $FQDN
+      secretName: minio-tls-certs
 EOF
 
 echo Try acesss S3 interface with $FQDN:30443
@@ -166,24 +172,51 @@ echo Admin UI is https://$FQDN:30443/minio
 
 }
 
+MinioHttpService () {
+local NS=minio
+local FQDN="minio.sapdemo.lab"
+kubectl -n $NS apply -f - << EOF
+apiVersion: v1
+kind: Service
+metadata:
+  name: miniohttp
+spec:
+  ports:
+  - name: minio
+    port: 9000
+    nodePort: 30900
+    protocol: TCP
+    targetPort: minio
+  selector:
+    app.kubernetes.io/instance: minio
+    app.kubernetes.io/name: minio
+  type: NodePort
+EOF
+
+}
+
 SAPConfig () {
-local NS=di310
+local NS=di313
 
 kubectl create ns $NS
 
-## Configure for private registry certificates
-Debug cp /etc/docker_registry/certs/monitoring_crt.pem /etc/docker_registry/certs/cert_with_carriage_return
+#Debug cp /etc/docker_registry/certs/s3_crt.pem /etc/docker_registry/certs/cert_with_carriage_return_s3
+#tr -d '\r' < /etc/docker_registry/certs/cert_with_carriage_return_s3 > /etc/docker_registry/certs/cert_s3
+
+Debug cp $froLOCAL_REPO_DIR/cert/natgw_cert/cacert.pem /etc/docker_registry/certs/cert_with_carriage_return
 tr -d '\r' < /etc/docker_registry/certs/cert_with_carriage_return > /etc/docker_registry/certs/cert
 kubectl create secret generic cmcertificates --from-file=/etc/docker_registry/certs/cert -n $NS
+
+
 
 }
 
 
 SAPpostinstallation () {
-local NS=di310
-local VSYSTEM="sapdi.example.com"
-openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /tmp/tls.key -out /tmp/tls.crt -subj "/CN=$VSYSTEM"
-kubectl -n $NS create secret tls vsystem-tls-certs --key /tmp/tls.key --cert /tmp/tls.crt
+local NS=di313
+local VSYSTEM="di.pntdemo.kr"
+#openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /tmp/tls.key -out /tmp/tls.crt -subj "/CN=$VSYSTEM"
+#kubectl -n $NS create secret tls vsystem-tls-certs --key /tmp/tls.key --cert /tmp/tls.crt
 
 kubectl -n $NS apply -f - << EOF
 apiVersion: extensions/v1beta1
@@ -205,10 +238,10 @@ spec:
   - host: "$VSYSTEM"
     http:
       paths:
-      - backend:
-          serviceName: vsystem
-          servicePort: 8797
-        path: /
+        - backend:
+            serviceName: vsystem
+            servicePort: 8797
+          path: /
   tls:
   - hosts:
     - "$VSYSTEM"
