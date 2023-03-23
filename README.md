@@ -1,1 +1,2 @@
 # my-tool
+my-tool
